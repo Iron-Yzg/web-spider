@@ -19,9 +19,16 @@ const isLoading = ref(true)
 const error = ref<string | null>(null)
 const isFullscreen = ref(false)
 
+// 根据窗口大小计算初始尺寸
+function getInitialSize() {
+  const width = Math.min(800, Math.floor(window.innerWidth * 0.6))
+  const height = Math.floor(width * 9 / 16)
+  return { width, height }
+}
+
 // 可拖拽状态
-const playerPosition = ref({ x: 100, y: 100 })
-const playerSize = ref({ width: 800, height: 450 })
+const playerPosition = ref({ x: 0, y: 0 })
+const playerSize = ref(getInitialSize())
 const isDragging = ref(false)
 const dragOffset = ref({ x: 0, y: 0 })
 
@@ -36,15 +43,36 @@ const resizeStartPosition = ref({ x: 0, y: 0 })
 const savedPosition = ref({ x: 0, y: 0 })
 const savedSize = ref({ width: 0, height: 0 })
 
+// 计算居中位置
+function calculateCenteredPosition(width: number, height: number) {
+  return {
+    x: Math.max(0, Math.floor((window.innerWidth - width) / 2)),
+    y: Math.max(0, Math.floor((window.innerHeight - height) / 2))
+  }
+}
+
 // 加载保存的位置和大小
 function loadSavedState() {
   const saved = localStorage.getItem('video-player-state')
+  const initialSize = getInitialSize()
   if (saved) {
     try {
       const state = JSON.parse(saved)
-      playerPosition.value = state.position || { x: 100, y: 100 }
-      playerSize.value = state.size || { width: 800, height: 450 }
-    } catch (e) {}
+      if (state.position && state.size) {
+        playerPosition.value = state.position
+        playerSize.value = state.size
+      } else {
+        const centered = calculateCenteredPosition(initialSize.width, initialSize.height)
+        playerPosition.value = centered
+        playerSize.value = initialSize
+      }
+    } catch (e) {
+      const centered = calculateCenteredPosition(initialSize.width, initialSize.height)
+      playerPosition.value = centered
+    }
+  } else {
+    const centered = calculateCenteredPosition(initialSize.width, initialSize.height)
+    playerPosition.value = centered
   }
 }
 
@@ -264,10 +292,28 @@ function handleClose() {
 
 function togglePlay() {
   if (!videoRef.value) return
-  if (videoRef.value.paused) {
-    videoRef.value.play()
-  } else {
-    videoRef.value.pause()
+  try {
+    if (videoRef.value.paused) {
+      videoRef.value.play()
+    } else {
+      videoRef.value.pause()
+    }
+  } catch (e) {
+    console.error('播放控制失败:', e)
+  }
+}
+
+// HLS 进度条拖动处理
+function handleSeeking() {
+  if (hlsRef.value && videoRef.value) {
+    // HLS.js 在 seek 时会自动处理，不需要额外操作
+  }
+}
+
+function handleSeeked() {
+  // 进度条拖动完成后，确保播放继续
+  if (videoRef.value && videoRef.value.paused) {
+    videoRef.value.play().catch(() => {})
   }
 }
 
@@ -280,11 +326,21 @@ onMounted(() => {
       setTimeout(initPlayer, 100)
     })
   }
+  // 监听 ESC 键退出播放器全屏
+  document.addEventListener('keydown', handleKeydown)
 })
 
 onUnmounted(() => {
   destroyHls()
+  document.removeEventListener('keydown', handleKeydown)
 })
+
+// 处理键盘事件
+function handleKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape' && isFullscreen.value) {
+    toggleFullscreen()
+  }
+}
 
 watch(() => props.visible, async (visible) => {
   if (visible) {
@@ -352,6 +408,8 @@ watch(() => props.src, () => {
             controls
             playsinline
             @click="togglePlay"
+            @seeking="handleSeeking"
+            @seeked="handleSeeked"
           ></video>
 
           <div v-if="isLoading" class="loading-overlay">
@@ -400,6 +458,7 @@ watch(() => props.src, () => {
   min-width: 400px;
   min-height: 225px;
   transition: width 0.2s, height 0.2s, left 0.2s, top 0.2s;
+  user-select: none;
 }
 
 .player-container.is-fullscreen {
@@ -483,11 +542,32 @@ watch(() => props.src, () => {
   width: 100%;
   height: 100%;
   object-fit: contain;
+  background: #000;
+}
+
+/* 视频控件样式 */
+.video-element::-webkit-media-controls {
+  background: transparent !important;
 }
 
 .video-element::-webkit-media-controls-enclosure {
-  /* 移除悬停时的深色遮罩 */
+  background: transparent !important;
   opacity: 1 !important;
+}
+
+.video-element::-webkit-media-controls-panel {
+  background: rgba(0, 0, 0, 0.5) !important;
+}
+
+.video-element::-webkit-media-controls-play-button,
+.video-element::-webkit-media-controls-mute-button,
+.video-element::-webkit-media-controls-volume-slider {
+  background: rgba(255, 255, 255, 0.3) !important;
+  border-radius: 4px !important;
+}
+
+.video-element::-webkit-media-controls-timeline {
+  background: rgba(255, 255, 255, 0.2) !important;
 }
 
 .loading-overlay,
@@ -543,6 +623,7 @@ watch(() => props.src, () => {
 .resize-handle {
   position: absolute;
   z-index: 10;
+  user-select: none;
 }
 
 .resize-e {

@@ -488,7 +488,6 @@ function handlePlayerClose() {
             <div class="col-action">
               <!-- 播放按钮（仅已爬取或已下载的视频可播放） -->
               <button
-                v-if="video.status === VideoStatus.Scraped || video.status === VideoStatus.Downloaded"
                 @click="openPlayer(video)"
                 class="action-btn play"
                 title="播放"
