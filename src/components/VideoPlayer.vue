@@ -17,6 +17,159 @@ const videoRef = ref<HTMLVideoElement | null>(null)
 const hlsRef = ref<Hls | null>(null)
 const isLoading = ref(true)
 const error = ref<string | null>(null)
+const isFullscreen = ref(false)
+
+// 可拖拽状态
+const playerPosition = ref({ x: 100, y: 100 })
+const playerSize = ref({ width: 800, height: 450 })
+const isDragging = ref(false)
+const dragOffset = ref({ x: 0, y: 0 })
+
+// 调整大小的状态
+const isResizing = ref(false)
+const resizeDirection = ref('')
+const resizeStartPos = ref({ x: 0, y: 0 })
+const resizeStartSize = ref({ width: 0, height: 0 })
+const resizeStartPosition = ref({ x: 0, y: 0 })
+
+// 全屏恢复状态
+const savedPosition = ref({ x: 0, y: 0 })
+const savedSize = ref({ width: 0, height: 0 })
+
+// 加载保存的位置和大小
+function loadSavedState() {
+  const saved = localStorage.getItem('video-player-state')
+  if (saved) {
+    try {
+      const state = JSON.parse(saved)
+      playerPosition.value = state.position || { x: 100, y: 100 }
+      playerSize.value = state.size || { width: 800, height: 450 }
+    } catch (e) {}
+  }
+}
+
+// 保存位置和大小
+function saveState() {
+  localStorage.setItem('video-player-state', JSON.stringify({
+    position: playerPosition.value,
+    size: playerSize.value
+  }))
+}
+
+// 开始拖拽
+function startDrag(event: MouseEvent) {
+  isDragging.value = true
+  dragOffset.value = {
+    x: event.clientX - playerPosition.value.x,
+    y: event.clientY - playerPosition.value.y
+  }
+  document.addEventListener('mousemove', onDrag)
+  document.addEventListener('mouseup', stopDrag)
+}
+
+// 拖拽中
+function onDrag(event: MouseEvent) {
+  if (!isDragging.value) return
+  playerPosition.value = {
+    x: event.clientX - dragOffset.value.x,
+    y: event.clientY - dragOffset.value.y
+  }
+}
+
+// 停止拖拽
+function stopDrag() {
+  isDragging.value = false
+  document.removeEventListener('mousemove', onDrag)
+  document.removeEventListener('mouseup', stopDrag)
+  saveState()
+}
+
+// 开始调整大小
+function startResize(event: MouseEvent, direction: string) {
+  if (isFullscreen.value) return
+  event.preventDefault()
+  event.stopPropagation()
+
+  isResizing.value = true
+  resizeDirection.value = direction
+  resizeStartPos.value = { x: event.clientX, y: event.clientY }
+  resizeStartSize.value = { ...playerSize.value }
+  resizeStartPosition.value = { ...playerPosition.value }
+
+  document.addEventListener('mousemove', onResize)
+  document.addEventListener('mouseup', stopResize)
+}
+
+// 调整大小中
+function onResize(event: MouseEvent) {
+  if (!isResizing.value) return
+
+  const dx = event.clientX - resizeStartPos.value.x
+  const dy = event.clientY - resizeStartPos.value.y
+  const minWidth = 400
+  const minHeight = 225
+  const maxWidth = window.innerWidth - playerPosition.value.x
+  const maxHeight = window.innerHeight - playerPosition.value.y
+
+  let newWidth = resizeStartSize.value.width
+  let newHeight = resizeStartSize.value.height
+  let newX = resizeStartPosition.value.x
+  let newY = resizeStartPosition.value.y
+
+  const direction = resizeDirection.value
+
+  if (direction.includes('e')) {
+    newWidth = Math.max(minWidth, Math.min(maxWidth, resizeStartSize.value.width + dx))
+  }
+  if (direction.includes('w')) {
+    const newLeft = resizeStartPosition.value.x + dx
+    if (newLeft >= 0 && newLeft + minWidth <= window.innerWidth) {
+      newX = newLeft
+      newWidth = Math.max(minWidth, Math.min(window.innerWidth - newX, resizeStartSize.value.width - dx))
+    }
+  }
+  if (direction.includes('s')) {
+    newHeight = Math.max(minHeight, Math.min(maxHeight, resizeStartSize.value.height + dy))
+  }
+  if (direction.includes('n')) {
+    const newTop = resizeStartPosition.value.y + dy
+    if (newTop >= 0 && newTop + minHeight <= window.innerHeight) {
+      newY = newTop
+      newHeight = Math.max(minHeight, Math.min(window.innerHeight - newY, resizeStartSize.value.height - dy))
+    }
+  }
+
+  playerSize.value = { width: newWidth, height: newHeight }
+  playerPosition.value = { x: newX, y: newY }
+}
+
+// 停止调整大小
+function stopResize() {
+  isResizing.value = false
+  resizeDirection.value = ''
+  document.removeEventListener('mousemove', onResize)
+  document.removeEventListener('mouseup', stopResize)
+  saveState()
+}
+
+// 全屏切换 - 占满应用窗口
+function toggleFullscreen() {
+  if (isFullscreen.value) {
+    // 退出全屏 - 恢复之前的位置和大小
+    playerPosition.value = { ...savedPosition.value }
+    playerSize.value = { ...savedSize.value }
+    isFullscreen.value = false
+  } else {
+    // 进入全屏 - 保存当前状态
+    savedPosition.value = { ...playerPosition.value }
+    savedSize.value = { ...playerSize.value }
+    // 设置为全屏大小（应用窗口内，占满底部）
+    playerPosition.value = { x: 0, y: 0 }
+    playerSize.value = { width: window.innerWidth, height: window.innerHeight }
+    isFullscreen.value = true
+  }
+  saveState()
+}
 
 function initPlayer() {
   // 确保 video 元素存在
@@ -50,7 +203,7 @@ function initPlayer() {
         })
       })
 
-      hlsRef.value.on(Hls.Events.ERROR, (event, data) => {
+      hlsRef.value.on(Hls.Events.ERROR, (_event, data) => {
         if (data.fatal) {
           switch (data.type) {
             case Hls.ErrorTypes.NETWORK_ERROR:
@@ -118,6 +271,21 @@ function togglePlay() {
   }
 }
 
+onMounted(() => {
+  // 加载保存的位置和大小
+  loadSavedState()
+  // 如果组件挂载时已经可见，初始化播放器
+  if (props.visible) {
+    nextTick(() => {
+      setTimeout(initPlayer, 100)
+    })
+  }
+})
+
+onUnmounted(() => {
+  destroyHls()
+})
+
 watch(() => props.visible, async (visible) => {
   if (visible) {
     // 等待 DOM 更新
@@ -135,33 +303,46 @@ watch(() => props.src, () => {
     initPlayer()
   }
 })
-
-onMounted(() => {
-  // 如果组件挂载时已经可见，初始化播放器
-  if (props.visible) {
-    nextTick(() => {
-      setTimeout(initPlayer, 100)
-    })
-  }
-})
-
-onUnmounted(() => {
-  destroyHls()
-})
 </script>
 
 <template>
   <Transition name="fade">
     <div v-if="visible" class="player-overlay" @click.self="handleClose">
-      <div class="player-container">
-        <div class="player-header">
+      <div
+        class="player-container"
+        :class="{ 'is-fullscreen': isFullscreen }"
+        :style="{
+          left: playerPosition.x + 'px',
+          top: playerPosition.y + 'px',
+          width: playerSize.width + 'px',
+          height: playerSize.height + 'px'
+        }"
+      >
+        <!-- 拖拽标题栏 -->
+        <div class="player-header" @mousedown="startDrag">
           <span class="player-title">{{ title }}</span>
-          <button class="close-btn" @click="handleClose">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
-          </button>
+          <div class="header-actions">
+            <button class="action-btn" @click="toggleFullscreen" :title="isFullscreen ? '退出全屏' : '全屏'">
+              <svg v-if="!isFullscreen" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="15 3 21 3 21 9"></polyline>
+                <polyline points="9 21 3 21 3 15"></polyline>
+                <line x1="21" y1="3" x2="14" y2="10"></line>
+                <line x1="3" y1="21" x2="10" y2="14"></line>
+              </svg>
+              <svg v-else xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="4 14 10 14 10 20"></polyline>
+                <polyline points="20 10 14 10 14 4"></polyline>
+                <line x1="14" y1="10" x2="21" y2="3"></line>
+                <line x1="3" y1="21" x2="10" y2="14"></line>
+              </svg>
+            </button>
+            <button class="close-btn" @click="handleClose">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+          </div>
         </div>
 
         <div class="video-wrapper">
@@ -182,6 +363,14 @@ onUnmounted(() => {
             <span>{{ error }}</span>
           </div>
         </div>
+
+        <!-- 调整大小的手柄（非全屏时显示） -->
+        <template v-if="!isFullscreen">
+          <div class="resize-handle resize-e" @mousedown="startResize($event, 'e')"></div>
+          <div class="resize-handle resize-s" @mousedown="startResize($event, 's')"></div>
+          <div class="resize-handle resize-se" @mousedown="startResize($event, 'se')"></div>
+          <div class="resize-handle resize-sw" @mousedown="startResize($event, 'sw')"></div>
+        </template>
       </div>
     </div>
   </Transition>
@@ -194,47 +383,84 @@ onUnmounted(() => {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.85);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  background: rgba(0, 0, 0, 0);
   z-index: 9999;
+  pointer-events: none;
 }
 
 .player-container {
-  width: 90%;
-  max-width: 1000px;
+  position: absolute;
   background: #1a1a2e;
-  border-radius: 12px;
+  border-radius: 8px;
   overflow: hidden;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+  pointer-events: auto;
+  min-width: 400px;
+  min-height: 225px;
+  transition: width 0.2s, height 0.2s, left 0.2s, top 0.2s;
+}
+
+.player-container.is-fullscreen {
+  border-radius: 0;
 }
 
 .player-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 20px;
+  padding: 12px 16px;
   background: #16162a;
   border-bottom: 1px solid #2d2d44;
+  cursor: move;
+  user-select: none;
+}
+
+.player-header:hover {
+  background: #1a1a35;
 }
 
 .player-title {
   color: #fff;
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.close-btn {
-  padding: 8px;
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.action-btn {
+  padding: 6px;
   background: transparent;
   border: none;
   color: #94a3b8;
   cursor: pointer;
-  border-radius: 6px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.action-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.close-btn {
+  padding: 6px;
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  border-radius: 4px;
   transition: all 0.2s;
   display: flex;
   align-items: center;
@@ -248,15 +474,20 @@ onUnmounted(() => {
 
 .video-wrapper {
   position: relative;
-  width: 100%;
-  aspect-ratio: 16 / 9;
+  flex: 1;
   background: #000;
+  min-height: 0;
 }
 
 .video-element {
   width: 100%;
   height: 100%;
   object-fit: contain;
+}
+
+.video-element::-webkit-media-controls-enclosure {
+  /* 移除悬停时的深色遮罩 */
+  opacity: 1 !important;
 }
 
 .loading-overlay,
@@ -300,11 +531,60 @@ onUnmounted(() => {
 /* 过渡动画 */
 .fade-enter-active,
 .fade-leave-active {
-  transition: opacity 0.3s ease;
+  transition: opacity 0.2s ease;
 }
 
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
+}
+
+/* 调整大小的手柄 */
+.resize-handle {
+  position: absolute;
+  z-index: 10;
+}
+
+.resize-e {
+  right: 0;
+  top: 0;
+  width: 6px;
+  height: 100%;
+  cursor: e-resize;
+}
+
+.resize-s {
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 6px;
+  cursor: s-resize;
+}
+
+.resize-se {
+  right: 0;
+  bottom: 0;
+  width: 16px;
+  height: 16px;
+  cursor: se-resize;
+  clip-path: polygon(100% 0, 0 100%, 100% 100%);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.resize-sw {
+  left: 0;
+  bottom: 0;
+  width: 16px;
+  height: 16px;
+  cursor: sw-resize;
+  clip-path: polygon(0 0, 100% 100%, 0 100%);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.resize-e:hover,
+.resize-s:hover,
+.resize-se:hover,
+.resize-sw:hover {
+  background: rgba(255, 255, 255, 0.2);
 }
 </style>
