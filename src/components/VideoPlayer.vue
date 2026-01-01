@@ -19,16 +19,24 @@ const isLoading = ref(true)
 const error = ref<string | null>(null)
 const isFullscreen = ref(false)
 
-// 根据窗口大小计算初始尺寸
+// 根据窗口大小计算初始尺寸 (窗口的 35% 宽，16:9 比例)
 function getInitialSize() {
-  const width = Math.min(800, Math.floor(window.innerWidth * 0.6))
+  const width = Math.min(900, Math.floor(window.innerWidth * 0.5))
   const height = Math.floor(width * 9 / 16)
   return { width, height }
 }
 
+// 计算居中位置
+function getCenteredPosition(width: number, height: number) {
+  return {
+    x: Math.max(0, Math.floor((window.innerWidth - width) / 2)),
+    y: Math.max(0, Math.floor((window.innerHeight - height) / 2))
+  }
+}
+
 // 可拖拽状态
 const playerPosition = ref({ x: 0, y: 0 })
-const playerSize = ref(getInitialSize())
+const playerSize = ref({ width: 0, height: 0 })
 const isDragging = ref(false)
 const dragOffset = ref({ x: 0, y: 0 })
 
@@ -43,45 +51,11 @@ const resizeStartPosition = ref({ x: 0, y: 0 })
 const savedPosition = ref({ x: 0, y: 0 })
 const savedSize = ref({ width: 0, height: 0 })
 
-// 计算居中位置
-function calculateCenteredPosition(width: number, height: number) {
-  return {
-    x: Math.max(0, Math.floor((window.innerWidth - width) / 2)),
-    y: Math.max(0, Math.floor((window.innerHeight - height) / 2))
-  }
-}
-
-// 加载保存的位置和大小
-function loadSavedState() {
-  const saved = localStorage.getItem('video-player-state')
-  const initialSize = getInitialSize()
-  if (saved) {
-    try {
-      const state = JSON.parse(saved)
-      if (state.position && state.size) {
-        playerPosition.value = state.position
-        playerSize.value = state.size
-      } else {
-        const centered = calculateCenteredPosition(initialSize.width, initialSize.height)
-        playerPosition.value = centered
-        playerSize.value = initialSize
-      }
-    } catch (e) {
-      const centered = calculateCenteredPosition(initialSize.width, initialSize.height)
-      playerPosition.value = centered
-    }
-  } else {
-    const centered = calculateCenteredPosition(initialSize.width, initialSize.height)
-    playerPosition.value = centered
-  }
-}
-
-// 保存位置和大小
-function saveState() {
-  localStorage.setItem('video-player-state', JSON.stringify({
-    position: playerPosition.value,
-    size: playerSize.value
-  }))
+// 初始化播放器位置和大小
+function initPlayerPosition() {
+  const size = getInitialSize()
+  playerSize.value = size
+  playerPosition.value = getCenteredPosition(size.width, size.height)
 }
 
 // 开始拖拽
@@ -109,7 +83,6 @@ function stopDrag() {
   isDragging.value = false
   document.removeEventListener('mousemove', onDrag)
   document.removeEventListener('mouseup', stopDrag)
-  saveState()
 }
 
 // 开始调整大小
@@ -177,7 +150,6 @@ function stopResize() {
   resizeDirection.value = ''
   document.removeEventListener('mousemove', onResize)
   document.removeEventListener('mouseup', stopResize)
-  saveState()
 }
 
 // 全屏切换 - 占满应用窗口
@@ -196,7 +168,6 @@ function toggleFullscreen() {
     playerSize.value = { width: window.innerWidth, height: window.innerHeight }
     isFullscreen.value = true
   }
-  saveState()
 }
 
 function initPlayer() {
@@ -219,18 +190,24 @@ function initPlayer() {
       hlsRef.value = new Hls({
         enableWorker: true,
         lowLatencyMode: true,
+        backBufferLength: 90,
+        startPosition: -1,
+        maxBufferLength: 30,
+        maxMaxBufferLength: 600,
       })
 
-      hlsRef.value.loadSource(props.src)
-      hlsRef.value.attachMedia(videoRef.value)
-
+      // 确保加载完成后立即播放
       hlsRef.value.on(Hls.Events.MANIFEST_PARSED, () => {
         isLoading.value = false
-        videoRef.value?.play().catch(() => {
-          // 自动播放被阻止，等待用户交互
-        })
+        const playPromise = videoRef.value?.play()
+        if (playPromise) {
+          playPromise.catch(() => {
+            // 自动播放被阻止，等待用户交互
+          })
+        }
       })
 
+      // 监听错误恢复
       hlsRef.value.on(Hls.Events.ERROR, (_event, data) => {
         if (data.fatal) {
           switch (data.type) {
@@ -249,6 +226,9 @@ function initPlayer() {
           }
         }
       })
+
+      hlsRef.value.loadSource(props.src)
+      hlsRef.value.attachMedia(videoRef.value)
     } else if (videoRef.value.canPlayType('application/vnd.apple.mpegurl')) {
       // Safari 原生支持 HLS
       videoRef.value.src = props.src
@@ -290,17 +270,10 @@ function handleClose() {
   emit('close')
 }
 
-function togglePlay() {
-  if (!videoRef.value) return
-  try {
-    if (videoRef.value.paused) {
-      videoRef.value.play()
-    } else {
-      videoRef.value.pause()
-    }
-  } catch (e) {
-    console.error('播放控制失败:', e)
-  }
+// 播放状态变化处理 (用于同步 HLS 状态)
+function onPlayStateChange() {
+  // 视频元素的 controls 属性会自动处理播放/暂停
+  // 这里可以添加自定义逻辑
 }
 
 // HLS 进度条拖动处理
@@ -318,10 +291,9 @@ function handleSeeked() {
 }
 
 onMounted(() => {
-  // 加载保存的位置和大小
-  loadSavedState()
   // 如果组件挂载时已经可见，初始化播放器
   if (props.visible) {
+    initPlayerPosition()
     nextTick(() => {
       setTimeout(initPlayer, 100)
     })
@@ -344,6 +316,8 @@ function handleKeydown(event: KeyboardEvent) {
 
 watch(() => props.visible, async (visible) => {
   if (visible) {
+    // 每次打开时计算位置和大小（基于当前窗口）
+    initPlayerPosition()
     // 等待 DOM 更新
     await nextTick()
     // 再等待一下确保 video 元素存在
@@ -407,9 +381,10 @@ watch(() => props.src, () => {
             class="video-element"
             controls
             playsinline
-            @click="togglePlay"
             @seeking="handleSeeking"
             @seeked="handleSeeked"
+            @play="onPlayStateChange"
+            @pause="onPlayStateChange"
           ></video>
 
           <div v-if="isLoading" class="loading-overlay">
@@ -536,6 +511,9 @@ watch(() => props.src, () => {
   flex: 1;
   background: #000;
   min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .video-element {
@@ -543,6 +521,7 @@ watch(() => props.src, () => {
   height: 100%;
   object-fit: contain;
   background: #000;
+  display: block;
 }
 
 /* 视频控件样式 */
@@ -556,18 +535,28 @@ watch(() => props.src, () => {
 }
 
 .video-element::-webkit-media-controls-panel {
-  background: rgba(0, 0, 0, 0.5) !important;
+  background: transparent !important;
+}
+
+/* 移除 hover 时的蓝色遮罩 */
+.video-element::-webkit-media-controls-enclosure:hover {
+  background: transparent !important;
 }
 
 .video-element::-webkit-media-controls-play-button,
 .video-element::-webkit-media-controls-mute-button,
 .video-element::-webkit-media-controls-volume-slider {
-  background: rgba(255, 255, 255, 0.3) !important;
+  background: transparent !important;
   border-radius: 4px !important;
 }
 
 .video-element::-webkit-media-controls-timeline {
   background: rgba(255, 255, 255, 0.2) !important;
+}
+
+/* 移除默认的播放按钮遮罩 */
+.video-element::-webkit-media-controls-start-overlays {
+  background: transparent !important;
 }
 
 .loading-overlay,
