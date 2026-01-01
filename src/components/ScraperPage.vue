@@ -5,6 +5,7 @@ import { listen } from '@tauri-apps/api/event'
 import type { VideoItem, ScrapeResult, DownloadProgress } from '../types'
 import { VideoStatus } from '../types'
 import LogPopup from './LogPopup.vue'
+import VideoPlayer from './VideoPlayer.vue'
 
 const videoId = ref('')
 const isScraping = ref(false)
@@ -23,6 +24,12 @@ const confirmDialog = ref<{ visible: boolean, message: string, onConfirm: (() =>
   message: '',
   onConfirm: null
 })
+
+// 播放器状态
+const playerVisible = ref(false)
+const playerSrc = ref('')
+const playerTitle = ref('')
+
 let unlistenVideos: (() => void) | null = null
 let unlistenProgress: (() => void) | null = null
 let unlistenScrapeLog: (() => void) | null = null
@@ -334,6 +341,20 @@ function getProgress(progress: DownloadProgress | undefined): number {
 function isDownloading(video: VideoItem): boolean {
   return video.status === VideoStatus.Downloading && !!downloadProgress.value[video.id]
 }
+
+// 打开播放器
+function openPlayer(video: VideoItem) {
+  playerSrc.value = video.m3u8_url
+  playerTitle.value = video.name
+  playerVisible.value = true
+}
+
+// 关闭播放器
+function handlePlayerClose() {
+  playerVisible.value = false
+  playerSrc.value = ''
+  playerTitle.value = ''
+}
 </script>
 
 <template>
@@ -465,6 +486,17 @@ function isDownloading(video: VideoItem): boolean {
               </span>
             </div>
             <div class="col-action">
+              <!-- 播放按钮（仅已爬取或已下载的视频可播放） -->
+              <button
+                v-if="video.status === VideoStatus.Scraped || video.status === VideoStatus.Downloaded"
+                @click="openPlayer(video)"
+                class="action-btn play"
+                title="播放"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                  <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                </svg>
+              </button>
               <!-- 复制按钮 -->
               <button
                 @click="copyUrl(video.m3u8_url)"
@@ -523,6 +555,14 @@ function isDownloading(video: VideoItem): boolean {
         </div>
       </div>
     </Teleport>
+
+    <!-- 视频播放器 -->
+    <VideoPlayer
+      :visible="playerVisible"
+      :src="playerSrc"
+      :title="playerTitle"
+      @close="handlePlayerClose"
+    />
   </div>
 </template>
 
@@ -865,10 +905,10 @@ function isDownloading(video: VideoItem): boolean {
 }
 
 .col-action {
-  width: 120px;
+  width: 150px;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-shrink: 0;
 }
 
@@ -901,6 +941,15 @@ function isDownloading(video: VideoItem): boolean {
 
 .action-btn.copy:hover {
   background: #c7d2fe;
+}
+
+.action-btn.play {
+  background: #fef3c7;
+  color: #d97706;
+}
+
+.action-btn.play:hover {
+  background: #fde68a;
 }
 
 .action-btn.delete {
