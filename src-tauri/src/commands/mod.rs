@@ -10,20 +10,15 @@ use crate::models::{
 use crate::services::download_m3u8;
 use crate::services::scrape_m3u8;
 use crate::services::{batch_download_concurrent, is_downloading};
-use crate::services::AppState;
 
 #[tauri::command]
-pub fn get_config(state: State<'_, AppState>) -> AppConfig {
-    state.config.lock().unwrap().clone()
+pub async fn get_config(db: State<'_, Database>) -> Result<AppConfig, String> {
+    db.get_config().await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn update_config(state: State<'_, AppState>, config: AppConfig) -> Result<(), String> {
-    let mut config_guard = state.config.lock().map_err(|e: std::sync::PoisonError<_>| e.to_string())?;
-    *config_guard = config;
-    drop(config_guard);
-    state.save_config();
-    Ok(())
+pub async fn update_config(db: State<'_, Database>, config: AppConfig) -> Result<(), String> {
+    db.save_config(&config).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -65,11 +60,10 @@ pub async fn search_videos(
 #[tauri::command]
 pub async fn scrape_video(
     window: WebviewWindow,
-    state: State<'_, AppState>,
     db: State<'_, Database>,
     video_id: String,
 ) -> Result<ScrapeResult, String> {
-    let config = state.config.lock().unwrap().clone();
+    let config = db.get_config().await.map_err(|e| e.to_string())?;
     let local_storage_json = serde_json::to_string(&config.local_storage).unwrap_or_default();
 
     let _ = window.emit("scrape-log", "开始爬取视频...");
@@ -116,11 +110,10 @@ pub async fn scrape_video(
 #[tauri::command]
 pub async fn download_video(
     window: WebviewWindow,
-    state: State<'_, AppState>,
     db: State<'_, Database>,
     video_id: String,
 ) -> Result<(), String> {
-    let config = state.config.lock().unwrap().clone();
+    let config = db.get_config().await.map_err(|e| e.to_string())?;
     let download_path = config.download_path;
 
     let video = {
@@ -198,11 +191,10 @@ pub fn check_ffmpeg() -> bool {
 #[tauri::command]
 pub async fn batch_download(
     window: WebviewWindow,
-    state: State<'_, AppState>,
     db: State<'_, Database>,
     video_ids: Vec<String>,
 ) -> Result<(), String> {
-    let config = state.config.lock().unwrap().clone();
+    let config = db.get_config().await.map_err(|e| e.to_string())?;
     let download_path = config.download_path;
 
     let videos = db.get_all_videos().await.map_err(|e| e.to_string())?;

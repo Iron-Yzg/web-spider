@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use chrono::{DateTime, Utc};
 use std::str::FromStr;
 
-pub use crate::models::{VideoItem, VideoStatus};
+pub use crate::models::{AppConfig, LocalStorageItem, VideoItem, VideoStatus};
 
 /// 从数据库行解析 VideoItem
 fn row_to_video_item(row: &SqliteRow) -> Result<VideoItem, sqlx::Error> {
@@ -79,9 +79,6 @@ impl Database {
         // 运行迁移
         db.run_migrations().await?;
 
-        // 迁移 JSON 数据
-        db.migrate_from_json().await?;
-
         Ok(db)
     }
 
@@ -102,47 +99,13 @@ impl Database {
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_videos_created_at ON videos(created_at DESC)").execute(&self.pool).await?;
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_videos_status ON videos(status)").execute(&self.pool).await?;
 
-        Ok(())
-    }
-
-    /// 从 JSON 文件迁移数据
-    async fn migrate_from_json(&self) -> Result<(), sqlx::Error> {
-        let json_path = self.data_dir.join("videos.json");
-        if !json_path.exists() {
-            return Ok(());
-        }
-
-        // 检查是否已经迁移过
-        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM videos")
-            .fetch_one(&self.pool)
-            .await?;
-
-        if count > 0 {
-            return Ok(());
-        }
-
-        // 读取 JSON 文件
-        let content = std::fs::read_to_string(&json_path).map_err(|e| sqlx::Error::Protocol(e.to_string()))?;
-        let videos: Vec<VideoItem> = serde_json::from_str(&content)
-            .map_err(|e| sqlx::Error::Protocol(e.to_string()))?;
-
-        // 插入数据
-        for video in videos {
-            let status_str = serde_json::to_string(&video.status).unwrap_or_default();
-            let created_at_str = video.created_at.to_rfc3339();
-            let downloaded_at_str = video.downloaded_at.map(|d| d.to_rfc3339());
-            sqlx::query(r#"
-                INSERT OR REPLACE INTO videos (id, name, m3u8_url, status, created_at, downloaded_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-            "#)
-                .bind(video.id.clone())
-                .bind(video.name.clone())
-                .bind(video.m3u8_url.clone())
-                .bind(status_str)
-                .bind(created_at_str)
-                .bind(downloaded_at_str)
-                .execute(&self.pool).await?;
-        }
+        // 配置表 (key-value 结构)
+        sqlx::query(r#"
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+        "#).execute(&self.pool).await?;
 
         Ok(())
     }
@@ -354,6 +317,63 @@ impl Database {
         let status_str = serde_json::to_string(&VideoStatus::Downloaded).unwrap_or_default();
         sqlx::query("DELETE FROM videos WHERE status = ?")
             .bind(status_str)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    // ===== 配置管理 =====
+
+    /// 获取配置
+    pub async fn get_config(&self) -> Result<AppConfig, sqlx::Error> {
+        let download_path = self.get_setting("download_path").await?
+            .unwrap_or_else(|| "./downloads".to_string());
+
+        let default_quality = self.get_setting("default_quality").await?
+            .unwrap_or_else(|| "auto".to_string());
+
+        let local_storage_json = self.get_setting("local_storage").await?;
+        let local_storage: Vec<LocalStorageItem> = if let Some(json) = local_storage_json {
+            serde_json::from_str(&json).unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+
+        Ok(AppConfig {
+            download_path,
+            local_storage,
+            default_quality,
+        })
+    }
+
+    /// 保存完整配置
+    pub async fn save_config(&self, config: &AppConfig) -> Result<(), sqlx::Error> {
+        self.set_setting("download_path", &config.download_path).await?;
+        self.set_setting("default_quality", &config.default_quality).await?;
+        let local_storage_json = serde_json::to_string(&config.local_storage)
+            .map_err(|e| sqlx::Error::Protocol(e.to_string()))?;
+        self.set_setting("local_storage", &local_storage_json).await?;
+        Ok(())
+    }
+
+    /// 获取单个配置项
+    pub async fn get_setting(&self, key: &str) -> Result<Option<String>, sqlx::Error> {
+        let result: Option<String> = sqlx::query_scalar(
+            "SELECT value FROM settings WHERE key = ?"
+        )
+            .bind(key)
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(result)
+    }
+
+    /// 设置单个配置项
+    pub async fn set_setting(&self, key: &str, value: &str) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)"
+        )
+            .bind(key)
+            .bind(value)
             .execute(&self.pool)
             .await?;
         Ok(())

@@ -1,8 +1,5 @@
 use std::fs;
 use std::path::PathBuf;
-use std::sync::Mutex;
-
-use crate::models::{AppConfig, VideoItem};
 
 // 子模块
 mod scraper;
@@ -16,10 +13,8 @@ pub use downloader::{
     batch_download_concurrent,
 };
 
-/// 应用状态
+/// 应用状态（仅保留数据目录）
 pub struct AppState {
-    pub config: Mutex<AppConfig>,
-    pub videos: Mutex<Vec<VideoItem>>,
     pub data_dir: PathBuf,
 }
 
@@ -36,50 +31,7 @@ impl AppState {
         };
         let _ = fs::create_dir_all(&data_dir);
 
-        let config = Self::load_config(&data_dir);
-        let videos = Self::load_videos(&data_dir);
-
-        Self {
-            config: Mutex::new(config),
-            videos: Mutex::new(videos),
-            data_dir,
-        }
-    }
-
-    fn load_config(data_dir: &PathBuf) -> AppConfig {
-        let config_path = data_dir.join("config.json");
-
-        if let Ok(content) = fs::read_to_string(&config_path) {
-            serde_json::from_str(&content).unwrap_or_default()
-        } else {
-            AppConfig::default()
-        }
-    }
-
-    fn load_videos(data_dir: &PathBuf) -> Vec<VideoItem> {
-        let videos_path = data_dir.join("videos.json");
-        if let Ok(content) = fs::read_to_string(&videos_path) {
-            serde_json::from_str(&content).unwrap_or_default()
-        } else {
-            Vec::new()
-        }
-    }
-
-    pub fn save_config(&self) {
-        let config = self.config.lock().unwrap();
-        let config_path = self.data_dir.join("config.json");
-
-        if let Ok(content) = serde_json::to_string_pretty(&*config) {
-            let _ = fs::write(&config_path, content);
-        }
-    }
-
-    pub fn save_videos(&self) {
-        let videos = self.videos.lock().unwrap();
-        let videos_path = self.data_dir.join("videos.json");
-        if let Ok(content) = serde_json::to_string_pretty(&*videos) {
-            let _ = fs::write(&videos_path, content);
-        }
+        Self { data_dir }
     }
 }
 

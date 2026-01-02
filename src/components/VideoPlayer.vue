@@ -66,7 +66,7 @@ function createPlayer() {
     url: props.src,
     autoplay: true,
     muted: false,
-    volume: 0.8,
+    volume: 0.5,
     loop: false,
     flip: true,
     playbackRate: true,
