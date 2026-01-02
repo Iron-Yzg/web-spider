@@ -26,11 +26,11 @@ pub struct AppState {
 impl AppState {
     pub fn new() -> Self {
         // 使用应用数据目录，避免触发 Tauri 开发模式的重新构建
-        let data_dir = if let Some(home_dir) = dirs::data_dir() {
-            // macOS: ~/Library/Application Support/com.yangzhenguo.web-spider
-            // Linux: ~/.local/share/web-spider
-            // Windows: AppData\Roaming\web-spider
-            home_dir.join("web-spider")
+        // macOS: ~/Library/Application Support/web-spider
+        let data_dir = if let Some(home_dir) = dirs::home_dir() {
+            home_dir.join("Library/Application Support/web-spider")
+        } else if let Some(data_dir) = dirs::data_dir() {
+            data_dir.join("web-spider")
         } else {
             PathBuf::from("./data")
         };

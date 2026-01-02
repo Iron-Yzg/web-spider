@@ -46,3 +46,12 @@ export interface DownloadProgress {
   speed: string
   eta: string
 }
+
+// 分页结果
+export interface PaginatedVideos {
+  videos: VideoItem[]
+  total: number
+  page: number
+  page_size: number
+  has_more: boolean
+}

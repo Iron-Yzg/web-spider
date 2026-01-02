@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-import type { VideoItem, ScrapeResult, DownloadProgress } from '../types'
+import type { VideoItem, ScrapeResult, DownloadProgress, PaginatedVideos } from '../types'
 import { VideoStatus } from '../types'
 import LogPopup from './LogPopup.vue'
 import VideoPlayer from './VideoPlayer.vue'
@@ -25,6 +25,14 @@ const confirmDialog = ref<{ visible: boolean, message: string, onConfirm: (() =>
   onConfirm: null
 })
 
+// 分页状态
+const currentPage = ref(1)
+const pageSize = 20
+const total = ref(0)
+const hasMore = ref(false)
+const isLoadingMore = ref(false)
+const tableBodyRef = ref<HTMLElement | null>(null)
+
 // 播放器状态
 const playerVisible = ref(false)
 const playerSrc = ref('')
@@ -34,39 +42,42 @@ let unlistenVideos: (() => void) | null = null
 let unlistenProgress: (() => void) | null = null
 let unlistenScrapeLog: (() => void) | null = null
 
+// 监听搜索和筛选变化，重置列表
+watch([searchQuery, statusFilter], async () => {
+  currentPage.value = 1
+  videos.value = []
+  if (searchQuery.value.trim()) {
+    await searchVideos()
+  } else {
+    await loadVideos()
+  }
+})
+
 onMounted(async () => {
   await loadVideos()
 
-  unlistenVideos = await listen<VideoItem[]>('videos-updated', (event) => {
-    videos.value = event.payload
-    filterVideos()
+  unlistenVideos = await listen<VideoItem[]>('videos-updated', async () => {
+    // 重新加载第一页
+    currentPage.value = 1
+    videos.value = []
+    await loadVideos()
   })
 
-  unlistenProgress = await listen<DownloadProgress>('download-progress', (event) => {
+  unlistenProgress = await listen<DownloadProgress>('event', (event) => {
     const progress = event.payload
     downloadProgress.value[progress.video_id] = progress
 
     // 根据进度状态更新视频列表中的状态
-    if (progress.status === '下载完成' || progress.progress >= 100) {
-      // 下载完成
-      const video = videos.value.find(v => v.id === progress.video_id)
-      if (video) {
+    const video = videos.value.find(v => v.id === progress.video_id)
+    if (video) {
+      if (progress.status === '下载完成' || progress.progress >= 100) {
         video.status = VideoStatus.Downloaded
-      }
-    } else if (progress.status.startsWith('下载失败')) {
-      // 下载失败
-      const video = videos.value.find(v => v.id === progress.video_id)
-      if (video) {
+      } else if (progress.status.startsWith('下载失败')) {
         video.status = VideoStatus.Scraped
-      }
-    } else if (progress.progress > 0) {
-      // 下载中
-      const video = videos.value.find(v => v.id === progress.video_id)
-      if (video) {
+      } else if (progress.progress > 0) {
         video.status = VideoStatus.Downloading
       }
     }
-    filterVideos()
   })
 
   unlistenScrapeLog = await listen<string>('scrape-log', (event) => {
@@ -82,26 +93,81 @@ onUnmounted(() => {
   if (unlistenScrapeLog) unlistenScrapeLog()
 })
 
-async function loadVideos() {
+async function loadVideos(isLoadMore = false) {
   try {
-    videos.value = await invoke<VideoItem[]>('get_videos')
+    if (!isLoadMore) {
+      // 首次加载，显示加载状态
+      isLoadingMore.value = true
+    }
+
+    const result = await invoke<PaginatedVideos>('get_videos_paginated', {
+      page: currentPage.value,
+      pageSize
+    })
+
+    if (isLoadMore) {
+      videos.value = [...videos.value, ...result.videos]
+    } else {
+      videos.value = result.videos
+    }
+
+    total.value = result.total
+    hasMore.value = result.has_more
     filterVideos()
   } catch (e) {
     console.error('加载视频列表失败:', e)
+  } finally {
+    isLoadingMore.value = false
+  }
+}
+
+async function loadMore() {
+  if (isLoadingMore.value || !hasMore.value) return
+
+  isLoadingMore.value = true
+  currentPage.value++
+  await loadVideos(true)
+  isLoadingMore.value = false
+}
+
+// 滚动到底部自动加载更多
+function handleScroll(e: Event) {
+  const target = e.target as HTMLElement
+  const { scrollTop, scrollHeight, clientHeight } = target
+
+  // 当滚动到距离底部 50px 以内时触发加载
+  if (scrollHeight - scrollTop - clientHeight < 50) {
+    loadMore()
+  }
+}
+
+async function searchVideos() {
+  if (!searchQuery.value.trim()) {
+    await loadVideos()
+    return
+  }
+
+  try {
+    isLoadingMore.value = true
+    const result = await invoke<PaginatedVideos>('search_videos', {
+      query: searchQuery.value,
+      page: currentPage.value,
+      pageSize
+    })
+
+    videos.value = result.videos
+    total.value = result.total
+    hasMore.value = result.has_more
+    filterVideos()
+  } catch (e) {
+    console.error('搜索视频失败:', e)
+  } finally {
+    isLoadingMore.value = false
   }
 }
 
 function filterVideos() {
   let result = videos.value
-
-  // 按名称/ID搜索
-  if (searchQuery.value.trim()) {
-    const query = searchQuery.value.toLowerCase()
-    result = result.filter(v =>
-      v.name.toLowerCase().includes(query) ||
-      v.id.toLowerCase().includes(query)
-    )
-  }
 
   // 按状态筛选
   if (statusFilter.value) {
@@ -445,12 +511,19 @@ function handlePlayerClose() {
           <span class="col-action">操作</span>
         </div>
 
-        <div class="table-body">
-          <div v-if="videos.length === 0" class="empty-tip">
+        <div
+        class="table-body"
+        @scroll="handleScroll"
+        ref="tableBodyRef"
+      >
+          <div v-if="videos.length === 0 && !isLoadingMore" class="empty-tip">
             输入视频ID开始爬取
           </div>
-          <div v-else-if="filteredVideos.length === 0" class="empty-tip">
+          <div v-else-if="filteredVideos.length === 0 && !isLoadingMore" class="empty-tip">
             没有找到匹配的视频
+          </div>
+          <div v-else-if="isLoadingMore && videos.length === 0" class="empty-tip">
+            加载中...
           </div>
 
           <div v-for="video in filteredVideos" :key="video.id" class="table-row">
@@ -519,8 +592,6 @@ function handlePlayerClose() {
                   <line x1="12" y1="15" x2="12" y2="3"></line>
                 </svg>
               </button>
-              <!-- 已完成标签 -->
-              <!-- <span v-if="video.status === VideoStatus.Downloaded" class="done-tag">已完成</span> -->
               <!-- 删除按钮 -->
               <button @click="deleteVideo(video.id)" class="action-btn delete" title="删除">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -529,6 +600,23 @@ function handlePlayerClose() {
                 </svg>
               </button>
             </div>
+          </div>
+
+          <!-- 加载更多 -->
+          <div v-if="hasMore || isLoadingMore" class="load-more">
+            <button
+              v-if="hasMore && !isLoadingMore"
+              @click="loadMore"
+              class="load-more-btn"
+            >
+              加载更多
+            </button>
+            <span v-else-if="isLoadingMore" class="loading-text">加载中...</span>
+          </div>
+
+          <!-- 底部统计 -->
+          <div v-if="videos.length > 0" class="pagination-info">
+            共 {{ total }} 条视频，当前显示 {{ videos.length }} 条
           </div>
         </div>
       </div>
@@ -969,6 +1057,41 @@ function handlePlayerClose() {
   color: #16a34a;
   border-radius: 6px;
   font-size: 12px;
+}
+
+/* 加载更多 */
+.load-more {
+  padding: 16px;
+  text-align: center;
+}
+
+.load-more-btn {
+  padding: 8px 24px;
+  background: #f1f5f9;
+  color: #64748b;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.load-more-btn:hover {
+  background: #e2e8f0;
+  color: #475569;
+}
+
+.loading-text {
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+.pagination-info {
+  padding: 12px 20px;
+  text-align: right;
+  font-size: 12px;
+  color: #94a3b8;
+  border-top: 1px solid #f0f0f0;
 }
 
 /* 确认对话框 */
