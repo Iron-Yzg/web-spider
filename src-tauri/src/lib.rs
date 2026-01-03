@@ -59,6 +59,7 @@ pub fn run() {
             commands::save_website,
             commands::delete_website,
             commands::set_default_website,
+            commands::get_scrapers,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

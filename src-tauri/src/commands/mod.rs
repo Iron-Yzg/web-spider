@@ -8,8 +8,7 @@ use crate::models::{
     AppConfig, DownloadProgress, ScrapeResult, VideoItem, VideoStatus, Website,
 };
 use crate::services::download_m3u8;
-use crate::services::scrape_m3u8;
-use crate::services::{batch_download_concurrent, is_downloading};
+use crate::services::{batch_download_concurrent, is_downloading, Scraper, ScraperFactory, ScraperInfo, get_available_scrapers};
 
 #[tauri::command]
 pub async fn get_config(db: State<'_, Database>) -> Result<AppConfig, String> {
@@ -64,33 +63,37 @@ pub async fn scrape_video(
     video_id: String,
     website_id: Option<String>,
 ) -> Result<ScrapeResult, String> {
-    // 获取网站的 localStorage
-    let local_storage_json = if let Some(id) = website_id {
+    // 获取网站配置
+    let website = if let Some(id) = website_id {
         let websites = db.get_all_websites().await.map_err(|e| e.to_string())?;
-        if let Some(website) = websites.iter().find(|w| w.id == id) {
-            serde_json::to_string(&website.local_storage).unwrap_or_default()
-        } else {
-            // 如果找不到网站，使用默认网站的配置
-            let default_website = db.get_default_website().await.map_err(|e| e.to_string())?;
-            if let Some(site) = default_website {
-                serde_json::to_string(&site.local_storage).unwrap_or_default()
-            } else {
-                "{}".to_string()
-            }
-        }
+        websites.into_iter().find(|w| w.id == id)
     } else {
-        // 如果没有指定网站，使用默认网站的配置
-        let default_website = db.get_default_website().await.map_err(|e| e.to_string())?;
-        if let Some(site) = default_website {
-            serde_json::to_string(&site.local_storage).unwrap_or_default()
-        } else {
-            "{}".to_string()
-        }
+        db.get_default_website().await.map_err(|e| e.to_string())?
     };
 
-    let _ = window.emit("scrape-log", "开始爬取视频...");
+    // 获取网站配置，如果找不到则使用默认
+    let (website, scraper_name) = if let Some(site) = website {
+        let name = site.name.clone();
+        (site, name)
+    } else {
+        // 如果没有配置任何网站，使用默认配置
+        (Website {
+            id: "default".to_string(),
+            name: "默认网站".to_string(),
+            base_url: "https://d1ibyof3mbdf0n.cloudfront.net/".to_string(),
+            local_storage: vec![],
+            is_default: true,
+            spider: "d1".to_string(),
+        }, "默认网站".to_string())
+    };
 
-    let result = scrape_m3u8(&video_id, &local_storage_json, {
+    let _ = window.emit("scrape-log", format!("使用网站配置: {}", scraper_name));
+
+    // 使用工厂模式创建对应的爬虫
+    let scraper = ScraperFactory::create_scraper(&website);
+    let _ = window.emit("scrape-log", format!("使用爬虫: {}", scraper.id()));
+
+    let result = scraper.scrape(&video_id, {
         let window = window.clone();
         move |log: String| {
             let _ = window.emit("scrape-log", log);
@@ -306,4 +309,11 @@ pub async fn delete_website(db: State<'_, Database>, website_id: String) -> Resu
 #[tauri::command]
 pub async fn set_default_website(db: State<'_, Database>, website_id: String) -> Result<(), String> {
     db.set_default_website(&website_id).await.map_err(|e| e.to_string())
+}
+
+// ===== 爬虫管理命令 =====
+
+#[tauri::command]
+pub fn get_scrapers() -> Vec<ScraperInfo> {
+    get_available_scrapers()
 }

@@ -63,4 +63,11 @@ export interface Website {
   base_url: string
   local_storage: LocalStorageItem[]
   is_default: boolean
+  spider: string
+}
+
+// 爬虫信息
+export interface ScraperInfo {
+  id: string
+  name: string
 }

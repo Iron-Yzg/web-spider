@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { open } from '@tauri-apps/plugin-dialog'
-import type { AppConfig, Website, LocalStorageItem } from '../types'
+import type { AppConfig, Website, LocalStorageItem, ScraperInfo } from '../types'
 
 // 当前标签页
 const activeTab = ref<'websites' | 'download'>('websites')
@@ -20,6 +20,9 @@ const isLoading = ref(true)
 const isSaving = ref(false)
 const saveMessage = ref<{ type: 'success' | 'error', text: string } | null>(null)
 
+// 可用爬虫列表
+const scrapers = ref<ScraperInfo[]>([])
+
 let saveMessageTimeout: ReturnType<typeof setTimeout> | null = null
 
 // 新建/编辑网站表单
@@ -28,6 +31,7 @@ const editingWebsite = ref<Website | null>(null)
 const websiteForm = ref({
   name: '',
   base_url: '',
+  spider: 'd1',
   local_storage: [] as LocalStorageItem[]
 })
 const newStorageKey = ref('')
@@ -36,7 +40,8 @@ const newStorageValue = ref('')
 onMounted(async () => {
   await Promise.all([
     loadConfig(),
-    loadWebsites()
+    loadWebsites(),
+    loadScrapers()
   ])
   isLoading.value = false
 })
@@ -54,6 +59,14 @@ async function loadWebsites() {
     websites.value = await invoke<Website[]>('get_websites')
   } catch (e) {
     console.error('加载网站列表失败:', e)
+  }
+}
+
+async function loadScrapers() {
+  try {
+    scrapers.value = await invoke<ScraperInfo[]>('get_scrapers')
+  } catch (e) {
+    console.error('加载爬虫列表失败:', e)
   }
 }
 
@@ -75,6 +88,7 @@ function openWebsiteForm(website?: Website) {
     websiteForm.value = {
       name: website.name,
       base_url: website.base_url,
+      spider: website.spider || 'd1',
       local_storage: [...website.local_storage]
     }
   } else {
@@ -82,6 +96,7 @@ function openWebsiteForm(website?: Website) {
     websiteForm.value = {
       name: '',
       base_url: '',
+      spider: 'd1',
       local_storage: []
     }
   }
@@ -139,6 +154,7 @@ async function saveWebsite() {
       id: editingWebsite.value?.id || crypto.randomUUID(),
       name: websiteForm.value.name.trim(),
       base_url: websiteForm.value.base_url.trim(),
+      spider: websiteForm.value.spider,
       local_storage: websiteForm.value.local_storage,
       is_default: editingWebsite.value?.is_default || false
     }
@@ -226,8 +242,9 @@ async function checkFfmpeg() {
   }
 }
 
-const hasWebsites = computed(() => websites.value.length > 0)
-const defaultWebsite = computed(() => websites.value.find(w => w.is_default))
+// 未使用的计算属性（预留）
+// const hasWebsites = computed(() => websites.value.length > 0)
+// const defaultWebsite = computed(() => websites.value.find(w => w.is_default))
 </script>
 
 <template>
@@ -359,6 +376,16 @@ const defaultWebsite = computed(() => websites.value.find(w => w.is_default))
               class="form-input"
             />
             <span class="form-hint">爬取视频时使用的页面 URL</span>
+          </div>
+
+          <div class="form-group">
+            <label>爬虫</label>
+            <select v-model="websiteForm.spider" class="form-input">
+              <option v-for="scraper in scrapers" :key="scraper.id" :value="scraper.id">
+                {{ scraper.name }}
+              </option>
+            </select>
+            <span class="form-hint">选择用于爬取此网站的爬虫</span>
           </div>
 
           <div class="form-group">

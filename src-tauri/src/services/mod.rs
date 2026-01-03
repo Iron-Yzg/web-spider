@@ -5,7 +5,14 @@ use std::path::PathBuf;
 mod scraper;
 mod downloader;
 
-pub use scraper::scrape_m3u8;
+// 重新导出 scraper 模块的内容
+pub use scraper::{
+    Scraper,
+    ScraperFactory,
+    ScraperInfo,
+    get_available_scrapers,
+};
+
 pub use downloader::{
     download_m3u8,
     check_ffmpeg,

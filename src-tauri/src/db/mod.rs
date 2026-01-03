@@ -110,7 +110,8 @@ impl Database {
                 name TEXT NOT NULL,
                 base_url TEXT NOT NULL,
                 local_storage TEXT NOT NULL DEFAULT '[]',
-                is_default INTEGER NOT NULL DEFAULT 0
+                is_default INTEGER NOT NULL DEFAULT 0,
+                spider TEXT NOT NULL DEFAULT 'd1'
             )
         "#).execute(&self.pool).await?;
 
@@ -393,7 +394,7 @@ impl Database {
 
     /// 获取所有网站
     pub async fn get_all_websites(&self) -> Result<Vec<Website>, sqlx::Error> {
-        let rows = sqlx::query("SELECT id, name, base_url, local_storage, is_default FROM websites ORDER BY is_default DESC, name ASC")
+        let rows = sqlx::query("SELECT id, name, base_url, local_storage, is_default, spider FROM websites ORDER BY is_default DESC, name ASC")
             .fetch_all(&self.pool)
             .await?;
 
@@ -403,6 +404,7 @@ impl Database {
             let local_storage: Vec<LocalStorageItem> = serde_json::from_str(&local_storage_json)
                 .unwrap_or_default();
             let is_default: i32 = row.try_get("is_default")?;
+            let spider: String = row.try_get("spider")?;
 
             websites.push(Website {
                 id: row.try_get("id")?,
@@ -410,6 +412,7 @@ impl Database {
                 base_url: row.try_get("base_url")?,
                 local_storage,
                 is_default: is_default == 1,
+                spider,
             });
         }
         Ok(websites)
@@ -417,7 +420,7 @@ impl Database {
 
     /// 获取默认网站
     pub async fn get_default_website(&self) -> Result<Option<Website>, sqlx::Error> {
-        let row = sqlx::query("SELECT id, name, base_url, local_storage, is_default FROM websites WHERE is_default = 1 LIMIT 1")
+        let row = sqlx::query("SELECT id, name, base_url, local_storage, is_default, spider FROM websites WHERE is_default = 1 LIMIT 1")
             .fetch_optional(&self.pool)
             .await?;
 
@@ -425,6 +428,7 @@ impl Database {
             let local_storage_json: String = row.try_get("local_storage")?;
             let local_storage: Vec<LocalStorageItem> = serde_json::from_str(&local_storage_json)
                 .unwrap_or_default();
+            let spider: String = row.try_get("spider")?;
 
             Ok(Some(Website {
                 id: row.try_get("id")?,
@@ -432,6 +436,7 @@ impl Database {
                 base_url: row.try_get("base_url")?,
                 local_storage,
                 is_default: true,
+                spider,
             }))
         } else {
             Ok(None)
@@ -445,14 +450,15 @@ impl Database {
         let is_default = if website.is_default { 1 } else { 0 };
 
         sqlx::query(r#"
-            INSERT OR REPLACE INTO websites (id, name, base_url, local_storage, is_default)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT OR REPLACE INTO websites (id, name, base_url, local_storage, is_default, spider)
+            VALUES (?, ?, ?, ?, ?, ?)
         "#)
             .bind(website.id.clone())
             .bind(website.name.clone())
             .bind(website.base_url.clone())
             .bind(local_storage_json)
             .bind(is_default)
+            .bind(website.spider.clone())
             .execute(&self.pool)
             .await?;
         Ok(())

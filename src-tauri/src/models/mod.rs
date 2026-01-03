@@ -85,6 +85,8 @@ pub struct Website {
     pub base_url: String,
     pub local_storage: Vec<LocalStorageItem>,
     pub is_default: bool,
+    /// 使用的爬虫名称，如 "d1"
+    pub spider: String,
 }
 
 impl Default for Website {
@@ -95,6 +97,7 @@ impl Default for Website {
             base_url: String::new(),
             local_storage: Vec::new(),
             is_default: false,
+            spider: "d1".to_string(),
         }
     }
 }
