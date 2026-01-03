@@ -1,22 +1,122 @@
-name: Rust
+name: Build and Release
 
 on:
   push:
-    branches: [ "master" ]
+    branches: [master]
+    tags:
+      - 'v*'
   pull_request:
-    branches: [ "master" ]
+    branches: [master]
 
 env:
-  CARGO_TERM_COLOR: always
+  RUST_VERSION: stable
 
 jobs:
-  build:
-
+  # 基础检查（Linux）- 快速验证代码编译
+  check:
     runs-on: ubuntu-latest
-
     steps:
-    - uses: actions/checkout@v4
-    - name: Build
-      run: cargo build --verbose
-    - name: Run tests
-      run: cargo test --verbose
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          profile: minimal
+          default: true
+
+      - name: Check build
+        working-directory: src-tauri
+        run: cargo check --verbose
+
+  # 构建 macOS dmg 安装包
+  build-macos:
+    runs-on: macos-14  # macOS ARM64 (Apple Silicon)
+    # 需要手动触发或标签推送才运行
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          default: true
+
+      - name: Install dependencies
+        working-directory: src-tauri
+        run: |
+          # 安装 Tauri CLI
+          cargo install tauri-cli
+
+      - name: Build dmg
+        working-directory: src-tauri
+        run: |
+          cargo tauri build --bundles dmg
+        env:
+          # 无代码签名版本（仅用于测试）
+          # 如需正式发布，需要设置 APPLE_* 环境变量
+          TAURI_SIGNING_PRIVATE_KEY: ''
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
+
+      - name: Upload dmg artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-spider-macos-arm64
+          path: src-tauri/target/release/bundle/dmg/
+
+  # 构建 macOS x64 dmg 安装包
+  build-macos-x64:
+    runs-on: macos-13  # macOS Intel
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          default: true
+
+      - name: Install dependencies
+        working-directory: src-tauri
+        run: |
+          cargo install tauri-cli
+
+      - name: Build dmg
+        working-directory: src-tauri
+        run: |
+          cargo tauri build --bundles dmg
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ''
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
+
+      - name: Upload dmg artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-spider-macos-x64
+          path: src-tauri/target/release/bundle/dmg/
+
+  # 创建发布版本
+  release:
+    needs: [build-macos, build-macos-x64]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/**/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
