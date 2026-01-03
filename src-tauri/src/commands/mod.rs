@@ -140,7 +140,7 @@ pub async fn download_video(
     let mut progress_rx = progress_tx.subscribe();
     task::spawn(async move {
         while let Ok(progress) = progress_rx.recv().await {
-            let _ = window_clone.emit("download-progress", progress);
+            let _ = window_clone.emit("event", progress);
         }
     });
 
@@ -235,7 +235,7 @@ pub async fn batch_download(
     let mut progress_rx = progress_tx.subscribe();
     task::spawn(async move {
         while let Ok(progress) = progress_rx.recv().await {
-            let _ = window_clone.emit("download-progress", progress);
+            let _ = window_clone.emit("event", progress);
         }
     });
 
