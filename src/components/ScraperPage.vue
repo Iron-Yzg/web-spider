@@ -248,7 +248,6 @@ function handleLogPopupClose() {
 }
 
 async function downloadVideo(video: VideoItem) {
-  if (video.status === VideoStatus.Downloading) return
 
   try {
     await invoke('download_video', { videoId: video.id })

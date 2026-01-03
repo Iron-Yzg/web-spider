@@ -46,7 +46,6 @@ pub struct PaginatedVideos {
 /// 数据库管理器
 pub struct Database {
     pool: SqlitePool,
-    data_dir: PathBuf,
 }
 
 impl Database {
@@ -71,10 +70,7 @@ impl Database {
 
         let pool = SqlitePool::connect_with(options).await?;
 
-        let db = Self {
-            pool,
-            data_dir: data_dir.clone(),
-        };
+        let db = Self { pool };
 
         // 运行迁移
         db.run_migrations().await?;
