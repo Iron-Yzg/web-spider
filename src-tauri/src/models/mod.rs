@@ -76,3 +76,25 @@ pub struct DownloadProgress {
     pub speed: String,
     pub eta: String,
 }
+
+/// 网站配置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Website {
+    pub id: String,
+    pub name: String,
+    pub base_url: String,
+    pub local_storage: Vec<LocalStorageItem>,
+    pub is_default: bool,
+}
+
+impl Default for Website {
+    fn default() -> Self {
+        Self {
+            id: Uuid::new_v4().to_string(),
+            name: String::new(),
+            base_url: String::new(),
+            local_storage: Vec::new(),
+            is_default: false,
+        }
+    }
+}

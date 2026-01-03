@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use chrono::{DateTime, Utc};
 use std::str::FromStr;
 
-pub use crate::models::{AppConfig, LocalStorageItem, VideoItem, VideoStatus};
+pub use crate::models::{AppConfig, LocalStorageItem, VideoItem, VideoStatus, Website};
 
 /// 从数据库行解析 VideoItem
 fn row_to_video_item(row: &SqliteRow) -> Result<VideoItem, sqlx::Error> {
@@ -102,6 +102,20 @@ impl Database {
                 value TEXT NOT NULL
             )
         "#).execute(&self.pool).await?;
+
+        // 网站配置表
+        sqlx::query(r#"
+            CREATE TABLE IF NOT EXISTS websites (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                base_url TEXT NOT NULL,
+                local_storage TEXT NOT NULL DEFAULT '[]',
+                is_default INTEGER NOT NULL DEFAULT 0
+            )
+        "#).execute(&self.pool).await?;
+
+        // 创建索引
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_websites_is_default ON websites(is_default DESC)").execute(&self.pool).await?;
 
         Ok(())
     }
@@ -370,6 +384,99 @@ impl Database {
         )
             .bind(key)
             .bind(value)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    // ===== 网站管理 =====
+
+    /// 获取所有网站
+    pub async fn get_all_websites(&self) -> Result<Vec<Website>, sqlx::Error> {
+        let rows = sqlx::query("SELECT id, name, base_url, local_storage, is_default FROM websites ORDER BY is_default DESC, name ASC")
+            .fetch_all(&self.pool)
+            .await?;
+
+        let mut websites = Vec::new();
+        for row in rows {
+            let local_storage_json: String = row.try_get("local_storage")?;
+            let local_storage: Vec<LocalStorageItem> = serde_json::from_str(&local_storage_json)
+                .unwrap_or_default();
+            let is_default: i32 = row.try_get("is_default")?;
+
+            websites.push(Website {
+                id: row.try_get("id")?,
+                name: row.try_get("name")?,
+                base_url: row.try_get("base_url")?,
+                local_storage,
+                is_default: is_default == 1,
+            });
+        }
+        Ok(websites)
+    }
+
+    /// 获取默认网站
+    pub async fn get_default_website(&self) -> Result<Option<Website>, sqlx::Error> {
+        let row = sqlx::query("SELECT id, name, base_url, local_storage, is_default FROM websites WHERE is_default = 1 LIMIT 1")
+            .fetch_optional(&self.pool)
+            .await?;
+
+        if let Some(row) = row {
+            let local_storage_json: String = row.try_get("local_storage")?;
+            let local_storage: Vec<LocalStorageItem> = serde_json::from_str(&local_storage_json)
+                .unwrap_or_default();
+
+            Ok(Some(Website {
+                id: row.try_get("id")?,
+                name: row.try_get("name")?,
+                base_url: row.try_get("base_url")?,
+                local_storage,
+                is_default: true,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// 添加或更新网站
+    pub async fn save_website(&self, website: &Website) -> Result<(), sqlx::Error> {
+        let local_storage_json = serde_json::to_string(&website.local_storage)
+            .map_err(|e| sqlx::Error::Protocol(e.to_string()))?;
+        let is_default = if website.is_default { 1 } else { 0 };
+
+        sqlx::query(r#"
+            INSERT OR REPLACE INTO websites (id, name, base_url, local_storage, is_default)
+            VALUES (?, ?, ?, ?, ?)
+        "#)
+            .bind(website.id.clone())
+            .bind(website.name.clone())
+            .bind(website.base_url.clone())
+            .bind(local_storage_json)
+            .bind(is_default)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// 删除网站
+    pub async fn delete_website(&self, id: &str) -> Result<(), sqlx::Error> {
+        sqlx::query("DELETE FROM websites WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// 设置默认网站
+    pub async fn set_default_website(&self, id: &str) -> Result<(), sqlx::Error> {
+        // 先清除所有默认标记
+        sqlx::query("UPDATE websites SET is_default = 0")
+            .execute(&self.pool)
+            .await?;
+
+        // 设置新的默认网站
+        sqlx::query("UPDATE websites SET is_default = 1 WHERE id = ?")
+            .bind(id)
             .execute(&self.pool)
             .await?;
         Ok(())

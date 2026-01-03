@@ -55,3 +55,12 @@ export interface PaginatedVideos {
   page_size: number
   has_more: boolean
 }
+
+// 网站配置
+export interface Website {
+  id: string
+  name: string
+  base_url: string
+  local_storage: LocalStorageItem[]
+  is_default: boolean
+}

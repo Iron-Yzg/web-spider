@@ -5,7 +5,7 @@ use tauri::{Emitter, State, WebviewWindow};
 
 use crate::db::{Database, PaginatedVideos};
 use crate::models::{
-    AppConfig, DownloadProgress, ScrapeResult, VideoItem, VideoStatus,
+    AppConfig, DownloadProgress, ScrapeResult, VideoItem, VideoStatus, Website,
 };
 use crate::services::download_m3u8;
 use crate::services::scrape_m3u8;
@@ -62,9 +62,31 @@ pub async fn scrape_video(
     window: WebviewWindow,
     db: State<'_, Database>,
     video_id: String,
+    website_id: Option<String>,
 ) -> Result<ScrapeResult, String> {
-    let config = db.get_config().await.map_err(|e| e.to_string())?;
-    let local_storage_json = serde_json::to_string(&config.local_storage).unwrap_or_default();
+    // 获取网站的 localStorage
+    let local_storage_json = if let Some(id) = website_id {
+        let websites = db.get_all_websites().await.map_err(|e| e.to_string())?;
+        if let Some(website) = websites.iter().find(|w| w.id == id) {
+            serde_json::to_string(&website.local_storage).unwrap_or_default()
+        } else {
+            // 如果找不到网站，使用默认网站的配置
+            let default_website = db.get_default_website().await.map_err(|e| e.to_string())?;
+            if let Some(site) = default_website {
+                serde_json::to_string(&site.local_storage).unwrap_or_default()
+            } else {
+                "{}".to_string()
+            }
+        }
+    } else {
+        // 如果没有指定网站，使用默认网站的配置
+        let default_website = db.get_default_website().await.map_err(|e| e.to_string())?;
+        if let Some(site) = default_website {
+            serde_json::to_string(&site.local_storage).unwrap_or_default()
+        } else {
+            "{}".to_string()
+        }
+    };
 
     let _ = window.emit("scrape-log", "开始爬取视频...");
 
@@ -262,4 +284,26 @@ pub async fn batch_download(
     }
 
     Ok(())
+}
+
+// ===== 网站管理命令 =====
+
+#[tauri::command]
+pub async fn get_websites(db: State<'_, Database>) -> Result<Vec<Website>, String> {
+    db.get_all_websites().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn save_website(db: State<'_, Database>, website: Website) -> Result<(), String> {
+    db.save_website(&website).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn delete_website(db: State<'_, Database>, website_id: String) -> Result<(), String> {
+    db.delete_website(&website_id).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn set_default_website(db: State<'_, Database>, website_id: String) -> Result<(), String> {
+    db.set_default_website(&website_id).await.map_err(|e| e.to_string())
 }

@@ -2,7 +2,7 @@
 import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-import type { VideoItem, ScrapeResult, DownloadProgress, PaginatedVideos } from '../types'
+import type { VideoItem, ScrapeResult, DownloadProgress, PaginatedVideos, Website } from '../types'
 import { VideoStatus } from '../types'
 import LogPopup from './LogPopup.vue'
 import VideoPlayer from './VideoPlayer.vue'
@@ -24,6 +24,10 @@ const confirmDialog = ref<{ visible: boolean, message: string, onConfirm: (() =>
   message: '',
   onConfirm: null
 })
+
+// 网站选择
+const websites = ref<Website[]>([])
+const selectedWebsite = ref<string>('')
 
 // 分页状态
 const currentPage = ref(1)
@@ -54,7 +58,10 @@ watch([searchQuery, statusFilter], async () => {
 })
 
 onMounted(async () => {
-  await loadVideos()
+  await Promise.all([
+    loadVideos(),
+    loadWebsites()
+  ])
 
   unlistenVideos = await listen<VideoItem[]>('videos-updated', async () => {
     // 重新加载第一页
@@ -121,6 +128,21 @@ async function loadVideos(isLoadMore = false) {
   }
 }
 
+async function loadWebsites() {
+  try {
+    websites.value = await invoke<Website[]>('get_websites')
+    // 自动选择默认网站
+    const defaultSite = websites.value.find(w => w.is_default)
+    if (defaultSite) {
+      selectedWebsite.value = defaultSite.id
+    } else if (websites.value.length > 0) {
+      selectedWebsite.value = websites.value[0].id
+    }
+  } catch (e) {
+    console.error('加载网站列表失败:', e)
+  }
+}
+
 async function loadMore() {
   if (isLoadingMore.value || !hasMore.value) return
 
@@ -178,6 +200,11 @@ function filterVideos() {
 }
 
 async function scrape() {
+  if (websites.value.length === 0) {
+    alert('请先在设置页面添加网站配置')
+    return
+  }
+
   if (!videoId.value.trim()) {
     alert('请输入视频ID')
     return
@@ -192,14 +219,16 @@ async function scrape() {
   // 延迟一点确保组件已渲染
   await nextTick()
   if (logPopupRef.value) {
-    logPopupRef.value.addLog(`开始爬取视频: ${videoId.value.trim()}`)
+    const website = websites.value.find(w => w.id === selectedWebsite.value)
+    logPopupRef.value.addLog(`开始爬取视频: ${videoId.value.trim()} (${website?.name || '未知网站'})`)
   }
 
   isScraping.value = true
 
   try {
     const result = await invoke<ScrapeResult>('scrape_video', {
-      videoId: videoId.value.trim()
+      videoId: videoId.value.trim(),
+      websiteId: selectedWebsite.value || null
     })
 
     scrapeResult.value = result
@@ -426,6 +455,12 @@ function handlePlayerClose() {
   <div class="scraper-page">
     <!-- 顶部搜索栏 -->
     <div class="search-bar">
+      <!-- 网站选择 -->
+      <select v-model="selectedWebsite" :disabled="isScraping" class="website-select">
+        <option v-for="site in websites" :key="site.id" :value="site.id">
+          {{ site.name }}
+        </option>
+      </select>
       <input
         type="text"
         v-model="videoId"
@@ -670,6 +705,29 @@ function handlePlayerClose() {
   padding: 16px 20px;
   border-bottom: 1px solid #f0f0f0;
   flex-shrink: 0;
+}
+
+.website-select {
+  padding: 10px 14px;
+  border: 1px solid #e8e8e8;
+  border-radius: 8px;
+  font-size: 14px;
+  background: white;
+  cursor: pointer;
+  min-width: 140px;
+  transition: all 0.2s;
+}
+
+.website-select:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.website-select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  background: #fafbfc;
 }
 
 .search-input {

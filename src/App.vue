@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import ConfigPage from './components/ConfigPage.vue'
 import ScraperPage from './components/ScraperPage.vue'
+import SettingsPage from './components/SettingsPage.vue'
 
-type Tab = 'scraper' | 'config'
+type Tab = 'scraper' | 'settings'
 
 const currentTab = ref<Tab>('scraper')
 </script>
@@ -21,8 +21,8 @@ const currentTab = ref<Tab>('scraper')
           爬取视频
         </button>
         <button
-          :class="['nav-tab', { active: currentTab === 'config' }]"
-          @click="currentTab = 'config'"
+          :class="['nav-tab', { active: currentTab === 'settings' }]"
+          @click="currentTab = 'settings'"
         >
           设置
         </button>
@@ -32,7 +32,7 @@ const currentTab = ref<Tab>('scraper')
     <!-- 主内容区 -->
     <main class="main-content">
       <ScraperPage v-if="currentTab === 'scraper'" />
-      <ConfigPage v-if="currentTab === 'config'" />
+      <SettingsPage v-if="currentTab === 'settings'" />
     </main>
   </div>
 </template>

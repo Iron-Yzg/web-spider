@@ -5,7 +5,7 @@ mod db;
 mod models;
 mod services;
 
-pub use models::{AppConfig, DownloadProgress, LocalStorageItem, ScrapeResult, VideoItem, VideoStatus};
+pub use models::{AppConfig, DownloadProgress, LocalStorageItem, ScrapeResult, VideoItem, VideoStatus, Website};
 pub use services::{AppState, AppState as AppStateTrait};
 pub use db::{Database, PaginatedVideos};
 
@@ -55,6 +55,10 @@ pub fn run() {
             commands::delete_video,
             commands::clear_downloaded,
             commands::check_ffmpeg,
+            commands::get_websites,
+            commands::save_website,
+            commands::delete_website,
+            commands::set_default_website,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
