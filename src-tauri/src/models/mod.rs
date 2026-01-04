@@ -10,6 +10,10 @@ pub struct VideoItem {
     pub status: VideoStatus,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub downloaded_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// 爬取时输入的视频ID
+    pub scrape_id: String,
+    /// 来源网站名称
+    pub website_name: String,
 }
 
 impl Default for VideoItem {
@@ -21,6 +25,8 @@ impl Default for VideoItem {
             status: VideoStatus::Pending,
             created_at: chrono::Utc::now(),
             downloaded_at: None,
+            scrape_id: String::new(),
+            website_name: String::new(),
         }
     }
 }

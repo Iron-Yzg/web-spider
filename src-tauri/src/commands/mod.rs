@@ -72,7 +72,7 @@ pub async fn scrape_video(
     };
 
     // 获取网站配置，如果找不到则使用默认
-    let (website, scraper_name) = if let Some(site) = website {
+    let (website, website_name) = if let Some(site) = website {
         let name = site.name.clone();
         (site, name)
     } else {
@@ -87,7 +87,13 @@ pub async fn scrape_video(
         }, "默认网站".to_string())
     };
 
-    let _ = window.emit("scrape-log", format!("使用网站配置: {}", scraper_name));
+    // 检查是否已爬取过相同的视频
+    let exists = db.video_exists(&video_id, &website_name).await.map_err(|e| e.to_string())?;
+    if exists {
+        return Err(format!("该视频已在 '{}' 中爬取过", website_name));
+    }
+
+    let _ = window.emit("scrape-log", format!("使用网站配置: {}", website_name));
 
     // 使用工厂模式创建对应的爬虫
     let scraper = ScraperFactory::create_scraper(&website);
@@ -108,25 +114,21 @@ pub async fn scrape_video(
     }
 
     if result.success {
-        // 检查是否已存在
-        let all_videos = db.get_all_videos().await.map_err(|e| e.to_string())?;
-        let exists = all_videos.iter().any(|v| v.m3u8_url == result.m3u8_url);
+        let video = VideoItem {
+            id: uuid::Uuid::new_v4().to_string(),
+            name: result.name.clone(),
+            m3u8_url: result.m3u8_url.clone(),
+            status: VideoStatus::Scraped,
+            created_at: Utc::now(),
+            downloaded_at: None,
+            scrape_id: video_id.clone(),
+            website_name: website_name.clone(),
+        };
+        db.add_video(&video).await.map_err(|e| e.to_string())?;
 
-        if !exists {
-            let video = VideoItem {
-                id: uuid::Uuid::new_v4().to_string(),
-                name: result.name.clone(),
-                m3u8_url: result.m3u8_url.clone(),
-                status: VideoStatus::Scraped,
-                created_at: Utc::now(),
-                downloaded_at: None,
-            };
-            db.add_video(&video).await.map_err(|e| e.to_string())?;
-
-            // 通知前端视频列表已更新
-            let videos = db.get_all_videos().await.map_err(|e| e.to_string())?;
-            let _ = window.emit("videos-updated", videos);
-        }
+        // 通知前端视频列表已更新
+        let videos = db.get_all_videos().await.map_err(|e| e.to_string())?;
+        let _ = window.emit("videos-updated", videos);
     }
 
     Ok(result)

@@ -15,6 +15,8 @@ export interface VideoItem {
   status: VideoStatus
   created_at: string
   downloaded_at?: string
+  scrape_id: string
+  website_name: string
 }
 
 // 应用配置

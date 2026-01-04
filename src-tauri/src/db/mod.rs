@@ -23,6 +23,10 @@ fn row_to_video_item(row: &SqliteRow) -> Result<VideoItem, sqlx::Error> {
         .ok()
         .and_then(|s: String| s.parse().ok());
 
+    // 新字段，可能为空（兼容旧数据）
+    let scrape_id: String = row.try_get("scrape_id").unwrap_or_default();
+    let website_name: String = row.try_get("website_name").unwrap_or_default();
+
     Ok(VideoItem {
         id,
         name,
@@ -30,6 +34,8 @@ fn row_to_video_item(row: &SqliteRow) -> Result<VideoItem, sqlx::Error> {
         status,
         created_at,
         downloaded_at,
+        scrape_id,
+        website_name,
     })
 }
 
@@ -87,13 +93,17 @@ impl Database {
                 m3u8_url TEXT NOT NULL,
                 status TEXT NOT NULL DEFAULT 'Scraped',
                 created_at TEXT NOT NULL,
-                downloaded_at TEXT
+                downloaded_at TEXT,
+                scrape_id TEXT DEFAULT '',
+                website_name TEXT DEFAULT ''
             )
         "#).execute(&self.pool).await?;
 
         // 创建索引
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_videos_created_at ON videos(created_at DESC)").execute(&self.pool).await?;
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_videos_status ON videos(status)").execute(&self.pool).await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_videos_scrape_id ON videos(scrape_id)").execute(&self.pool).await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_videos_website_name ON videos(website_name)").execute(&self.pool).await?;
 
         // 配置表 (key-value 结构)
         sqlx::query(r#"
@@ -259,8 +269,8 @@ impl Database {
         let created_at_str = video.created_at.to_rfc3339();
         let downloaded_at_str = video.downloaded_at.map(|d| d.to_rfc3339());
         sqlx::query(r#"
-            INSERT OR REPLACE INTO videos (id, name, m3u8_url, status, created_at, downloaded_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT OR REPLACE INTO videos (id, name, m3u8_url, status, created_at, downloaded_at, scrape_id, website_name)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         "#)
             .bind(video.id.clone())
             .bind(video.name.clone())
@@ -268,8 +278,22 @@ impl Database {
             .bind(status_str)
             .bind(created_at_str)
             .bind(downloaded_at_str)
+            .bind(video.scrape_id.clone())
+            .bind(video.website_name.clone())
             .execute(&self.pool).await?;
         Ok(())
+    }
+
+    /// 检查视频是否已存在（通过 scrape_id 和 website_name）
+    pub async fn video_exists(&self, scrape_id: &str, website_name: &str) -> Result<bool, sqlx::Error> {
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM videos WHERE scrape_id = ? AND website_name = ?"
+        )
+            .bind(scrape_id)
+            .bind(website_name)
+            .fetch_one(&self.pool)
+            .await?;
+        Ok(count > 0)
     }
 
     /// 更新视频状态
