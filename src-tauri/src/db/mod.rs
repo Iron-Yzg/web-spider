@@ -241,8 +241,48 @@ impl Database {
             .await?;
 
         // 获取分页数据
-        let rows = sqlx::query("SELECT id, name, m3u8_url, status, created_at, downloaded_at FROM videos WHERE status = ? ORDER BY created_at DESC LIMIT ? OFFSET ?")
+        let rows = sqlx::query("SELECT id, name, m3u8_url, status, created_at, downloaded_at, scrape_id, website_name FROM videos WHERE status = ? ORDER BY created_at DESC LIMIT ? OFFSET ?")
             .bind(&status_str)
+            .bind(page_size)
+            .bind(offset)
+            .fetch_all(&self.pool)
+            .await?;
+
+        let mut videos = Vec::new();
+        for row in rows {
+            videos.push(row_to_video_item(&row)?);
+        }
+
+        let videos_len = videos.len();
+        Ok(PaginatedVideos {
+            videos,
+            total,
+            page,
+            page_size,
+            has_more: (offset as i64) + (videos_len as i64) < total,
+        })
+    }
+
+    /// 按网站名称获取视频（分页）
+    pub async fn get_videos_by_website(
+        &self,
+        website_name: &str,
+        page: i32,
+        page_size: i32,
+    ) -> Result<PaginatedVideos, sqlx::Error> {
+        let offset = (page - 1) * page_size;
+
+        // 获取总数
+        let total: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM videos WHERE website_name = ?"
+        )
+            .bind(website_name)
+            .fetch_one(&self.pool)
+            .await?;
+
+        // 获取分页数据
+        let rows = sqlx::query("SELECT id, name, m3u8_url, status, created_at, downloaded_at, scrape_id, website_name FROM videos WHERE website_name = ? ORDER BY created_at DESC LIMIT ? OFFSET ?")
+            .bind(website_name)
             .bind(page_size)
             .bind(offset)
             .fetch_all(&self.pool)

@@ -60,6 +60,7 @@ pub fn run() {
             commands::delete_website,
             commands::set_default_website,
             commands::get_scrapers,
+            commands::get_videos_by_website,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

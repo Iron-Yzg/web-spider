@@ -37,6 +37,7 @@ impl Scraper for D1Spider {
         let video_id = video_id.to_string();
         let base_url = self.base_url.clone();
         let local_storage = self.local_storage.clone();
+        let log_callback = log_callback.clone();
 
         Box::pin(async move {
             let page_url = format!("{}subPage/longViodePlay/?id={}", base_url, video_id);
@@ -71,6 +72,7 @@ impl Scraper for D1Spider {
                         name: String::new(),
                         m3u8_url: String::new(),
                         message: format!("启动浏览器失败: {}", e),
+                        video_id: Some(video_id.clone()),
                     };
                 }
             };
@@ -83,6 +85,7 @@ impl Scraper for D1Spider {
                         name: String::new(),
                         m3u8_url: String::new(),
                         message: format!("创建标签页失败: {}", e),
+                        video_id: Some(video_id.clone()),
                     };
                 }
             };
@@ -92,7 +95,7 @@ impl Scraper for D1Spider {
 
             // 注册网络响应处理器
             let captured_url_clone = Arc::clone(&captured_url);
-            let log_callback_for_response = Arc::new(log_callback);
+            let log_callback_for_response = Arc::new(log_callback.clone());
 
             // 注册网络响应处理器
             let _ = tab.register_response_handling(
@@ -141,6 +144,7 @@ impl Scraper for D1Spider {
                     name: String::new(),
                     m3u8_url: String::new(),
                     message: format!("导航失败: {}", nav_error),
+                    video_id: Some(video_id.clone()),
                 };
             }
 
@@ -194,6 +198,7 @@ impl Scraper for D1Spider {
                             name: String::new(),
                             m3u8_url: String::new(),
                             message: "资源不存在，该视频可能已被删除或ID无效".to_string(),
+                            video_id: Some(video_id.clone()),
                         };
                     }
                 }
@@ -241,6 +246,7 @@ impl Scraper for D1Spider {
                     name: name,
                     m3u8_url: final_url,
                     message: "成功找到 m3u8 地址".to_string(),
+                    video_id: Some(video_id.clone()),
                 }
             } else {
                 // 未找到 m3u8
@@ -253,8 +259,24 @@ impl Scraper for D1Spider {
                     name: String::new(),
                     m3u8_url: String::new(),
                     message: "未能找到 m3u8 地址".to_string(),
+                    video_id: Some(video_id.clone()),
                 }
             }
+        })
+    }
+
+    /// D1 爬虫只爬取单个视频，scrape_all 返回单个结果
+    fn scrape_all(
+        &self,
+        video_id: &str,
+        log_callback: impl Fn(String) + Clone + Send + Sync + 'static,
+    ) -> Pin<Box<dyn Future<Output = Vec<ScrapeResult>> + Send + 'static>>
+    where
+        Self: Sized,
+    {
+        let result = self.scrape(video_id, log_callback);
+        Box::pin(async move {
+            vec![result.await]
         })
     }
 }

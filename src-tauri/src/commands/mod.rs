@@ -87,11 +87,8 @@ pub async fn scrape_video(
         }, "默认网站".to_string())
     };
 
-    // 检查是否已爬取过相同的视频
-    let exists = db.video_exists(&video_id, &website_name).await.map_err(|e| e.to_string())?;
-    if exists {
-        return Err(format!("该视频已在 '{}' 中爬取过", website_name));
-    }
+    // 注意：不再对 SRL 爬虫进行整体页面重复检查
+    // 因为 SRL 爬虫可能返回多个新视频，每个视频通过 m3u8_url 单独检查重复
 
     let _ = window.emit("scrape-log", format!("使用网站配置: {}", website_name));
 
@@ -99,7 +96,9 @@ pub async fn scrape_video(
     let scraper = ScraperFactory::create_scraper(&website);
     let _ = window.emit("scrape-log", format!("使用爬虫: {}", scraper.id()));
 
-    let result = scraper.scrape(&video_id, {
+    // 调用 scrape_all 获取所有结果（SRL 爬虫会返回多个视频）
+    // 注意：不再检查整个页面是否已爬取，因为 SRL 爬虫可能返回多个新视频
+    let results = scraper.scrape_all(&video_id, {
         let window = window.clone();
         move |log: String| {
             let _ = window.emit("scrape-log", log);
@@ -107,31 +106,80 @@ pub async fn scrape_video(
     })
     .await;
 
-    if result.success {
-        let _ = window.emit("scrape-log", format!("爬取成功: {}", result.name));
+    // 保存每个成功的视频到数据库
+    let mut saved_count = 0;
+    let mut duplicate_count = 0;
+    for result in results.iter() {
+        if result.success {
+            // 对于 SRL 爬虫，多个视频来自同一页，使用 m3u8_url 检查重复
+            // 获取所有视频，检查是否已存在相同的 m3u8_url
+            let all_videos = db.get_all_videos().await.map_err(|e| e.to_string())?;
+            let exists = all_videos.iter().any(|v| v.m3u8_url == result.m3u8_url);
+
+            if exists {
+                duplicate_count += 1;
+                let _ = window.emit("scrape-log", format!("视频已存在，跳过: {}", result.name));
+                continue;
+            }
+
+            // 使用爬虫返回的实际视频ID，如果没有则使用输入的页码
+            let actual_video_id = result.video_id.clone().unwrap_or_else(|| video_id.clone());
+
+            let video = VideoItem {
+                id: uuid::Uuid::new_v4().to_string(),
+                name: result.name.clone(),
+                m3u8_url: result.m3u8_url.clone(),
+                status: VideoStatus::Scraped,
+                created_at: Utc::now(),
+                downloaded_at: None,
+                scrape_id: actual_video_id,
+                website_name: website_name.clone(),
+            };
+            match db.add_video(&video).await {
+                Ok(_) => {
+                    saved_count += 1;
+                    let _ = window.emit("scrape-log", format!("保存成功: {}", result.name));
+                }
+                Err(e) => {
+                    let _ = window.emit("scrape-log", format!("保存失败: {} - {}", result.name, e));
+                }
+            }
+        }
+    }
+
+    // 通知前端视频列表已更新
+    let videos = db.get_all_videos().await.map_err(|e| e.to_string())?;
+    let _ = window.emit("videos-updated", videos);
+
+    // 返回汇总结果
+    let success_count = results.iter().filter(|r| r.success).count();
+    let total_count = results.len();
+
+    if success_count > 0 {
+        Ok(ScrapeResult {
+            success: true,
+            name: format!("第{}页", video_id),
+            m3u8_url: String::new(),
+            message: format!("成功爬取 {} / {} 个视频 (新增: {}, 已存在: {})", success_count, total_count, saved_count, duplicate_count),
+            video_id: Some(video_id.clone()),
+        })
+    } else if let Some(first_fail) = results.iter().find(|r| !r.success) {
+        Ok(ScrapeResult {
+            success: false,
+            name: format!("第{}页", video_id),
+            m3u8_url: String::new(),
+            message: first_fail.message.clone(),
+            video_id: Some(video_id.clone()),
+        })
     } else {
-        let _ = window.emit("scrape-log", format!("爬取失败: {}", result.message));
+        Ok(ScrapeResult {
+            success: false,
+            name: format!("第{}页", video_id),
+            m3u8_url: String::new(),
+            message: "爬取失败".to_string(),
+            video_id: Some(video_id.clone()),
+        })
     }
-
-    if result.success {
-        let video = VideoItem {
-            id: uuid::Uuid::new_v4().to_string(),
-            name: result.name.clone(),
-            m3u8_url: result.m3u8_url.clone(),
-            status: VideoStatus::Scraped,
-            created_at: Utc::now(),
-            downloaded_at: None,
-            scrape_id: video_id.clone(),
-            website_name: website_name.clone(),
-        };
-        db.add_video(&video).await.map_err(|e| e.to_string())?;
-
-        // 通知前端视频列表已更新
-        let videos = db.get_all_videos().await.map_err(|e| e.to_string())?;
-        let _ = window.emit("videos-updated", videos);
-    }
-
-    Ok(result)
 }
 
 #[tauri::command]
@@ -318,4 +366,16 @@ pub async fn set_default_website(db: State<'_, Database>, website_id: String) ->
 #[tauri::command]
 pub fn get_scrapers() -> Vec<ScraperInfo> {
     get_available_scrapers()
+}
+
+#[tauri::command]
+pub async fn get_videos_by_website(
+    db: State<'_, Database>,
+    website_name: String,
+    page: i32,
+    page_size: i32,
+) -> Result<PaginatedVideos, String> {
+    db.get_videos_by_website(&website_name, page, page_size)
+        .await
+        .map_err(|e| e.to_string())
 }

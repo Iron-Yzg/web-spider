@@ -29,6 +29,14 @@ const confirmDialog = ref<{ visible: boolean, message: string, onConfirm: (() =>
 const websites = ref<Website[]>([])
 const selectedWebsite = ref<string>('')
 
+// 获取当前选中网站的名称
+const selectedWebsiteName = ref<string>('')
+
+function updateSelectedWebsiteName() {
+  const website = websites.value.find(w => w.id === selectedWebsite.value)
+  selectedWebsiteName.value = website?.name || ''
+}
+
 // 分页状态
 const currentPage = ref(1)
 const pageSize = 20
@@ -55,6 +63,14 @@ watch([searchQuery, statusFilter], async () => {
   } else {
     await loadVideos()
   }
+})
+
+// 监听网站选择变化，重置列表
+watch(selectedWebsite, async () => {
+  updateSelectedWebsiteName()
+  currentPage.value = 1
+  videos.value = []
+  await loadVideos()
 })
 
 onMounted(async () => {
@@ -107,10 +123,21 @@ async function loadVideos(isLoadMore = false) {
       isLoadingMore.value = true
     }
 
-    const result = await invoke<PaginatedVideos>('get_videos_paginated', {
-      page: currentPage.value,
-      pageSize
-    })
+    let result: PaginatedVideos
+
+    // 如果选择了网站，按网站名称筛选
+    if (selectedWebsiteName.value) {
+      result = await invoke<PaginatedVideos>('get_videos_by_website', {
+        websiteName: selectedWebsiteName.value,
+        page: currentPage.value,
+        pageSize
+      })
+    } else {
+      result = await invoke<PaginatedVideos>('get_videos_paginated', {
+        page: currentPage.value,
+        pageSize
+      })
+    }
 
     if (isLoadMore) {
       videos.value = [...videos.value, ...result.videos]
@@ -138,6 +165,7 @@ async function loadWebsites() {
     } else if (websites.value.length > 0) {
       selectedWebsite.value = websites.value[0].id
     }
+    updateSelectedWebsiteName()
   } catch (e) {
     console.error('加载网站列表失败:', e)
   }

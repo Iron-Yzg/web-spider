@@ -15,24 +15,33 @@ pub trait Scraper: Send + Sync {
     /// 获取爬虫标识名称
     fn id(&self) -> &'static str;
 
-    /// 爬取视频
+    /// 爬取单个视频
     fn scrape(
         &self,
         video_id: &str,
         log_callback: impl Fn(String) + Clone + Send + Sync + 'static,
     ) -> Pin<Box<dyn Future<Output = ScrapeResult> + Send>>;
+
+    /// 爬取所有视频（每个爬虫必须实现）
+    fn scrape_all(
+        &self,
+        video_id: &str,
+        log_callback: impl Fn(String) + Clone + Send + Sync + 'static,
+    ) -> Pin<Box<dyn Future<Output = Vec<ScrapeResult>> + Send + 'static>>;
 }
 
 /// 爬虫类型枚举
 #[derive(Clone)]
 pub enum AnyScraper {
     D1(D1Spider),
+    Srl(SrlSpider),
 }
 
 impl AnyScraper {
     pub fn id(&self) -> &'static str {
         match self {
             AnyScraper::D1(scraper) => scraper.id(),
+            AnyScraper::Srl(scraper) => scraper.id(),
         }
     }
 }
@@ -49,6 +58,21 @@ impl Scraper for AnyScraper {
     ) -> Pin<Box<dyn Future<Output = ScrapeResult> + Send>> {
         match self {
             AnyScraper::D1(scraper) => scraper.scrape(video_id, log_callback),
+            AnyScraper::Srl(scraper) => scraper.scrape(video_id, log_callback),
+        }
+    }
+
+    fn scrape_all(
+        &self,
+        video_id: &str,
+        log_callback: impl Fn(String) + Clone + Send + Sync + 'static,
+    ) -> Pin<Box<dyn Future<Output = Vec<ScrapeResult>> + Send>>
+    where
+        Self: Sized,
+    {
+        match self {
+            AnyScraper::D1(scraper) => scraper.scrape_all(video_id, log_callback),
+            AnyScraper::Srl(scraper) => scraper.scrape_all(video_id, log_callback),
         }
     }
 }
@@ -59,6 +83,10 @@ pub fn get_available_scrapers() -> Vec<ScraperInfo> {
         ScraperInfo {
             id: "d1".to_string(),
             name: "D1 CloudFront".to_string(),
+        },
+        ScraperInfo {
+            id: "srl".to_string(),
+            name: "SRL Wiki".to_string(),
         },
     ]
 }
@@ -71,6 +99,7 @@ impl ScraperFactory {
     pub fn create_scraper(website: &Website) -> AnyScraper {
         match website.spider.as_str() {
             "d1" => AnyScraper::D1(D1Spider::new(website)),
+            "srl" => AnyScraper::Srl(SrlSpider::new(website)),
             _ => panic!("未知的爬虫: {}", website.spider),
         }
     }
@@ -79,3 +108,7 @@ impl ScraperFactory {
 // D1 爬虫实现
 mod d1_spider;
 pub use d1_spider::D1Spider;
+
+// SRL 爬虫实现
+mod srl_spider;
+pub use srl_spider::SrlSpider;

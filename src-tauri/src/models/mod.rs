@@ -71,6 +71,8 @@ pub struct ScrapeResult {
     pub name: String,
     pub m3u8_url: String,
     pub message: String,
+    /// 视频ID（SRL爬虫使用实际视频ID，页码爬虫使用页码号）
+    pub video_id: Option<String>,
 }
 
 /// 下载进度
