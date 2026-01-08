@@ -111,10 +111,25 @@ pub async fn scrape_video(
     let mut duplicate_count = 0;
     for result in results.iter() {
         if result.success {
-            // 对于 SRL 爬虫，多个视频来自同一页，使用 m3u8_url 检查重复
-            // 获取所有视频，检查是否已存在相同的 m3u8_url
+            // 获取所有视频，用于重复检查
             let all_videos = db.get_all_videos().await.map_err(|e| e.to_string())?;
-            let exists = all_videos.iter().any(|v| v.m3u8_url == result.m3u8_url);
+
+            // 检查是否已存在：
+            // 1. 如果 m3u8_url 非空，使用 m3u8_url 检查（SRL/D1 爬虫）
+            // 2. 如果 m3u8_url 为空（列表爬虫如 D2），使用 video_id 或 name 检查
+            let exists = if !result.m3u8_url.is_empty() {
+                // 有 m3u8_url 的情况：检查 URL 是否已存在
+                all_videos.iter().any(|v| v.m3u8_url == result.m3u8_url)
+            } else {
+                // 没有 m3u8_url 的情况（列表爬虫）：检查 video_id 是否已存在
+                let result_video_id = result.video_id.clone().unwrap_or_default();
+                if !result_video_id.is_empty() {
+                    all_videos.iter().any(|v| v.scrape_id == result_video_id)
+                } else {
+                    // 都没有的话，检查 name 是否已存在
+                    all_videos.iter().any(|v| v.name == result.name)
+                }
+            };
 
             if exists {
                 duplicate_count += 1;
