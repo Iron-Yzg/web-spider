@@ -17,6 +17,9 @@ export interface VideoItem {
   downloaded_at?: string
   scrape_id: string
   website_name: string
+  cover_url?: string
+  view_count?: number
+  favorite_count?: number
 }
 
 // 应用配置

@@ -134,6 +134,9 @@ pub async fn scrape_video(
                 downloaded_at: None,
                 scrape_id: actual_video_id,
                 website_name: website_name.clone(),
+                cover_url: None,
+                favorite_count: None,
+                view_count: None,
             };
             match db.add_video(&video).await {
                 Ok(_) => {

@@ -14,6 +14,12 @@ pub struct VideoItem {
     pub scrape_id: String,
     /// 来源网站名称
     pub website_name: String,
+    /// 封面图片地址
+    pub cover_url: Option<String>,
+    /// 收藏数
+    pub favorite_count: Option<i64>,
+    /// 播放数
+    pub view_count: Option<i64>,
 }
 
 impl Default for VideoItem {
@@ -27,6 +33,9 @@ impl Default for VideoItem {
             downloaded_at: None,
             scrape_id: String::new(),
             website_name: String::new(),
+            cover_url: None,
+            favorite_count: None,
+            view_count: None,
         }
     }
 }

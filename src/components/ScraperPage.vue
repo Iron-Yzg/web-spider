@@ -530,6 +530,32 @@ function handlePlayerClose() {
   playerPlaylist.value = []
   currentVideoIndex.value = 0
 }
+
+// 格式化数字（万、亿）
+function formatCount(count: number | null | undefined): string {
+  if (count === null || count === undefined) return '-'
+  if (count >= 100000000) {
+    return (count / 100000000).toFixed(1) + '亿'
+  }
+  if (count >= 10000) {
+    return (count / 10000).toFixed(1) + '万'
+  }
+  return count.toString()
+}
+
+// 处理图片加载失败
+function handleImageError(event: Event) {
+  const img = event.target as HTMLImageElement
+  img.style.display = 'none'
+  // 显示占位符
+  const parent = img.parentElement
+  if (parent) {
+    const placeholder = parent.querySelector('.cover-placeholder-small') as HTMLElement
+    if (placeholder) {
+      placeholder.style.display = 'flex'
+    }
+  }
+}
 </script>
 
 <template>
@@ -650,9 +676,40 @@ function handlePlayerClose() {
                 @change="toggleSelect(video.id)"
               />
             </div>
+            <!-- 封面图片 -->
+            <div class="col-cover" @click="openPlayer(video)">
+              <img
+                v-if="video.cover_url"
+                :src="video.cover_url"
+                :alt="video.name"
+                class="cover-thumbnail"
+                @error="handleImageError"
+              />
+              <div v-else class="cover-placeholder-small">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect>
+                  <line x1="7" y1="2" x2="7" y2="22"></line>
+                  <line x1="17" y1="2" x2="17" y2="22"></line>
+                  <line x1="2" y1="12" x2="22" y2="12"></line>
+                </svg>
+              </div>
+            </div>
             <div class="col-name">
               <span class="video-name" :title="video.name">{{ video.name }}</span>
-              <span class="video-url" :title="video.m3u8_url">{{ video.m3u8_url.split('?')[0] }}</span>
+              <div class="video-tags">
+                <span v-if="video.view_count !== undefined && video.view_count !== null" class="tag tag-views">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                  </svg>
+                  {{ formatCount(video.view_count) }}
+                </span>
+                <span v-if="video.favorite_count !== undefined && video.favorite_count !== null" class="tag tag-favorites">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+                  </svg>
+                  {{ formatCount(video.favorite_count) }}
+                </span>
+              </div>
             </div>
             <div class="col-status">
               <!-- 下载中显示进度条 -->
@@ -1049,6 +1106,71 @@ function handlePlayerClose() {
   cursor: pointer;
   width: 16px;
   height: 16px;
+}
+
+/* 封面图片列 */
+.col-cover {
+  width: 60px;
+  height: 34px;
+  flex-shrink: 0;
+  margin-right: 12px;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  border-radius: 4px;
+  background: #f5f5f5;
+}
+
+.cover-thumbnail {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.2s ease;
+}
+
+.col-cover:hover .cover-thumbnail {
+  transform: scale(1.2);
+}
+
+.cover-placeholder-small {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f8f9fa;
+  color: #cbd5e1;
+}
+
+/* 视频标签 */
+.video-tags {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.tag-views {
+  background: #f0f9ff;
+  color: #0369a1;
+}
+
+.tag-favorites {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.tag svg {
+  flex-shrink: 0;
 }
 
 .col-name {

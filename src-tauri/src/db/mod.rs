@@ -26,6 +26,9 @@ fn row_to_video_item(row: &SqliteRow) -> Result<VideoItem, sqlx::Error> {
     // 新字段，可能为空（兼容旧数据）
     let scrape_id: String = row.try_get("scrape_id").unwrap_or_default();
     let website_name: String = row.try_get("website_name").unwrap_or_default();
+    let cover_url: Option<String> = row.try_get("cover_url").ok().filter(|s: &String| !s.is_empty());
+    let favorite_count: i64 = row.try_get("favorite_count").unwrap_or(0);
+    let view_count: i64 = row.try_get("view_count").unwrap_or(0);
 
     Ok(VideoItem {
         id,
@@ -36,6 +39,9 @@ fn row_to_video_item(row: &SqliteRow) -> Result<VideoItem, sqlx::Error> {
         downloaded_at,
         scrape_id,
         website_name,
+        cover_url,
+        favorite_count: Some(favorite_count),
+        view_count: Some(view_count),
     })
 }
 
@@ -95,7 +101,10 @@ impl Database {
                 created_at TEXT NOT NULL,
                 downloaded_at TEXT,
                 scrape_id TEXT DEFAULT '',
-                website_name TEXT DEFAULT ''
+                website_name TEXT DEFAULT '',
+                cover_url TEXT,
+                favorite_count INTEGER DEFAULT 0,
+                view_count INTEGER DEFAULT 0
             )
         "#).execute(&self.pool).await?;
 
@@ -309,8 +318,8 @@ impl Database {
         let created_at_str = video.created_at.to_rfc3339();
         let downloaded_at_str = video.downloaded_at.map(|d| d.to_rfc3339());
         sqlx::query(r#"
-            INSERT OR REPLACE INTO videos (id, name, m3u8_url, status, created_at, downloaded_at, scrape_id, website_name)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT OR REPLACE INTO videos (id, name, m3u8_url, status, created_at, downloaded_at, scrape_id, website_name, cover_url, favorite_count, view_count)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#)
             .bind(video.id.clone())
             .bind(video.name.clone())
@@ -320,6 +329,9 @@ impl Database {
             .bind(downloaded_at_str)
             .bind(video.scrape_id.clone())
             .bind(video.website_name.clone())
+            .bind(video.cover_url.clone())
+            .bind(video.favorite_count.unwrap_or(0))
+            .bind(video.view_count.unwrap_or(0))
             .execute(&self.pool).await?;
         Ok(())
     }
