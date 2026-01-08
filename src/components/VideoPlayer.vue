@@ -3,21 +3,60 @@ import { ref, onMounted, onUnmounted, watch, nextTick, onBeforeUnmount } from 'v
 import Artplayer from 'artplayer'
 import Hls from 'hls.js'
 
+interface VideoItem {
+  id: string
+  name: string
+  m3u8_url: string
+  status: string
+  created_at: string
+  downloaded_at?: string | null
+  scrape_id: string
+  website_name: string
+}
+
 interface Props {
   visible: boolean
   src: string
   title: string
+  playlist?: VideoItem[]
+  currentIndex?: number
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  playlist: () => [],
+  currentIndex: 0
+})
+
 const emit = defineEmits<{
   close: []
+  'play-next': [nextIndex: number]
+  'delete-current': []
 }>()
 
 const containerRef = ref<HTMLDivElement | null>(null)
 const artRef = ref<Artplayer | null>(null)
 const isLoading = ref(true)
 const error = ref<string | null>(null)
+
+// 计算是否有下一个视频
+const hasNextVideo = ref(false)
+
+function updateHasNextVideo() {
+  hasNextVideo.value = props.playlist.length > 0 && props.currentIndex < props.playlist.length - 1
+}
+
+// 播放下一个视频
+function playNextVideo() {
+  if (hasNextVideo.value) {
+    const nextIndex = props.currentIndex + 1
+    emit('play-next', nextIndex)
+  }
+}
+
+// 删除当前视频
+function deleteCurrentVideo() {
+  emit('delete-current')
+}
 
 // 根据窗口大小计算初始尺寸 (窗口的 80% 宽，16:9 比例)
 function getInitialSize() {
@@ -206,6 +245,7 @@ function stopDrag() {
 
 onMounted(() => {
   initPlayerPosition()
+  updateHasNextVideo()
 })
 
 onBeforeUnmount(() => {
@@ -219,6 +259,7 @@ onUnmounted(() => {
 watch(() => props.visible, async (visible) => {
   if (visible) {
     initPlayerPosition()
+    updateHasNextVideo()
     await nextTick()
     await new Promise(resolve => setTimeout(resolve, 50))
     createPlayer()
@@ -226,6 +267,10 @@ watch(() => props.visible, async (visible) => {
     destroyPlayer()
   }
 })
+
+watch(() => [props.playlist, props.currentIndex], () => {
+  updateHasNextVideo()
+}, { deep: true })
 
 watch(() => props.src, async (newSrc) => {
   if (props.visible && newSrc) {
@@ -253,6 +298,34 @@ watch(() => props.src, async (newSrc) => {
         <div v-if="!isFullscreen" class="player-header" @mousedown="startDrag">
           <span class="player-title">{{ title }}</span>
           <div class="header-actions">
+            <!-- 删除当前视频按钮 -->
+            <button
+              class="action-btn delete-btn"
+              @click.stop="deleteCurrentVideo"
+              title="删除当前视频"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                <line x1="10" y1="11" x2="10" y2="17"></line>
+                <line x1="14" y1="11" x2="14" y2="17"></line>
+              </svg>
+            </button>
+            <!-- 播放下一个按钮 -->
+            <button
+              v-if="hasNextVideo"
+              class="action-btn next-btn"
+              @click.stop="playNextVideo"
+              title="播放下一个"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                <line x1="19" y1="12" x2="9" y2="12"></line>
+                <line x1="19" y1="12" x2="9" y2="5"></line>
+                <line x1="19" y1="12" x2="9" y2="19"></line>
+              </svg>
+              <span class="next-text">下一个</span>
+            </button>
             <button class="close-btn" @click="handleClose" title="关闭">
               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -339,7 +412,50 @@ watch(() => props.src, async (newSrc) => {
 .header-actions {
   display: flex;
   align-items: center;
+  gap: 8px;
+}
+
+.action-btn {
+  padding: 6px 12px;
+  background: transparent;
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
   gap: 4px;
+}
+
+.player-container:hover .action-btn {
+  opacity: 1;
+}
+
+.action-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.next-btn {
+  background: rgba(102, 126, 234, 0.2);
+  border: 1px solid rgba(102, 126, 234, 0.5);
+}
+
+.next-btn:hover {
+  background: rgba(102, 126, 234, 0.4);
+}
+
+.delete-btn {
+  background: rgba(239, 68, 68, 0.2);
+  border: 1px solid rgba(239, 68, 68, 0.5);
+}
+
+.delete-btn:hover {
+  background: rgba(239, 68, 68, 0.4);
+}
+
+.next-text {
+  font-size: 12px;
 }
 
 .close-btn {

@@ -49,6 +49,8 @@ const tableBodyRef = ref<HTMLElement | null>(null)
 const playerVisible = ref(false)
 const playerSrc = ref('')
 const playerTitle = ref('')
+const playerPlaylist = ref<VideoItem[]>([])
+const currentVideoIndex = ref(0)
 
 let unlistenVideos: (() => void) | null = null
 let unlistenProgress: (() => void) | null = null
@@ -468,7 +470,56 @@ function isDownloading(video: VideoItem): boolean {
 function openPlayer(video: VideoItem) {
   playerSrc.value = video.m3u8_url
   playerTitle.value = video.name
+  // 设置播放列表和当前索引
+  playerPlaylist.value = videos.value
+  currentVideoIndex.value = videos.value.findIndex(v => v.id === video.id)
   playerVisible.value = true
+}
+
+// 处理播放下一个视频
+async function handlePlayNext(nextIndex: number) {
+  if (nextIndex >= 0 && nextIndex < playerPlaylist.value.length) {
+    const nextVideo = playerPlaylist.value[nextIndex]
+    playerSrc.value = nextVideo.m3u8_url
+    playerTitle.value = nextVideo.name
+    currentVideoIndex.value = nextIndex
+  }
+}
+
+// 处理删除当前视频
+async function handleDeleteCurrent() {
+  const currentVideo = playerPlaylist.value[currentVideoIndex.value]
+  if (!currentVideo) return
+
+  try {
+    // 调用删除接口
+    await invoke('delete_video', { videoId: currentVideo.id })
+    // 从本地列表中移除
+    const index = videos.value.findIndex(v => v.id === currentVideo.id)
+    if (index > -1) {
+      videos.value.splice(index, 1)
+      total.value--
+    }
+    // 从播放列表中移除
+    playerPlaylist.value.splice(currentVideoIndex.value, 1)
+
+    // 如果还有视频，播放下一个
+    if (playerPlaylist.value.length > 0) {
+      // 如果删除的是最后一个，回到前一个
+      const nextIndex = currentVideoIndex.value >= playerPlaylist.value.length
+        ? playerPlaylist.value.length - 1
+        : currentVideoIndex.value
+      const nextVideo = playerPlaylist.value[nextIndex]
+      playerSrc.value = nextVideo.m3u8_url
+      playerTitle.value = nextVideo.name
+      currentVideoIndex.value = nextIndex
+    } else {
+      // 没有视频了，关闭播放器
+      handlePlayerClose()
+    }
+  } catch (e) {
+    console.error('删除视频失败:', e)
+  }
 }
 
 // 关闭播放器
@@ -476,6 +527,8 @@ function handlePlayerClose() {
   playerVisible.value = false
   playerSrc.value = ''
   playerTitle.value = ''
+  playerPlaylist.value = []
+  currentVideoIndex.value = 0
 }
 </script>
 
@@ -710,7 +763,11 @@ function handlePlayerClose() {
       :visible="playerVisible"
       :src="playerSrc"
       :title="playerTitle"
+      :playlist="playerPlaylist"
+      :current-index="currentVideoIndex"
       @close="handlePlayerClose"
+      @play-next="handlePlayNext"
+      @delete-current="handleDeleteCurrent"
     />
   </div>
 </template>

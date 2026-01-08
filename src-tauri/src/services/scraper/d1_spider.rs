@@ -41,6 +41,7 @@ impl Scraper for D1Spider {
 
         Box::pin(async move {
             let page_url = format!("{}subPage/longViodePlay/?id={}", base_url, video_id);
+            let _ = log_callback(format!("正在爬取: {}", page_url));
 
             // 使用明确的 headless 模式参数
             let browser_args: Vec<&OsStr> = vec![
