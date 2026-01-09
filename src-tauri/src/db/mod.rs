@@ -142,7 +142,7 @@ impl Database {
 
     /// 获取所有视频（按创建时间倒序）
     pub async fn get_all_videos(&self) -> Result<Vec<VideoItem>, sqlx::Error> {
-        let rows = sqlx::query("SELECT id, name, m3u8_url, status, created_at, downloaded_at FROM videos ORDER BY created_at DESC")
+        let rows = sqlx::query("SELECT id, name, m3u8_url, status, created_at, downloaded_at, scrape_id, website_name, cover_url, favorite_count, view_count FROM videos ORDER BY created_at DESC")
             .fetch_all(&self.pool)
             .await?;
 
@@ -167,7 +167,7 @@ impl Database {
             .await?;
 
         // 获取分页数据
-        let rows = sqlx::query("SELECT id, name, m3u8_url, status, created_at, downloaded_at FROM videos ORDER BY created_at DESC LIMIT ? OFFSET ?")
+        let rows = sqlx::query("SELECT id, name, m3u8_url, status, created_at, downloaded_at, scrape_id, website_name, cover_url, favorite_count, view_count FROM videos ORDER BY created_at DESC LIMIT ? OFFSET ?")
             .bind(page_size)
             .bind(offset)
             .fetch_all(&self.pool)
@@ -208,7 +208,7 @@ impl Database {
             .await?;
 
         // 获取分页数据
-        let rows = sqlx::query("SELECT id, name, m3u8_url, status, created_at, downloaded_at FROM videos WHERE UPPER(name) LIKE ? OR UPPER(id) LIKE ? ORDER BY created_at DESC LIMIT ? OFFSET ?")
+        let rows = sqlx::query("SELECT id, name, m3u8_url, status, created_at, downloaded_at, scrape_id, website_name, cover_url, favorite_count, view_count FROM videos WHERE UPPER(name) LIKE ? OR UPPER(id) LIKE ? ORDER BY created_at DESC LIMIT ? OFFSET ?")
             .bind(&search_pattern)
             .bind(&search_pattern)
             .bind(page_size)
@@ -250,7 +250,7 @@ impl Database {
             .await?;
 
         // 获取分页数据
-        let rows = sqlx::query("SELECT id, name, m3u8_url, status, created_at, downloaded_at, scrape_id, website_name FROM videos WHERE status = ? ORDER BY created_at DESC LIMIT ? OFFSET ?")
+        let rows = sqlx::query("SELECT id, name, m3u8_url, status, created_at, downloaded_at, scrape_id, website_name, cover_url, favorite_count, view_count FROM videos WHERE status = ? ORDER BY created_at DESC LIMIT ? OFFSET ?")
             .bind(&status_str)
             .bind(page_size)
             .bind(offset)
@@ -290,7 +290,7 @@ impl Database {
             .await?;
 
         // 获取分页数据
-        let rows = sqlx::query("SELECT id, name, m3u8_url, status, created_at, downloaded_at, scrape_id, website_name FROM videos WHERE website_name = ? ORDER BY created_at DESC LIMIT ? OFFSET ?")
+        let rows = sqlx::query("SELECT id, name, m3u8_url, status, created_at, downloaded_at, scrape_id, website_name, cover_url, favorite_count, view_count FROM videos WHERE website_name = ? ORDER BY created_at DESC LIMIT ? OFFSET ?")
             .bind(website_name)
             .bind(page_size)
             .bind(offset)

@@ -360,6 +360,9 @@ impl Scraper for D2Spider {
                         m3u8_url: String::new(),
                         message: format!("启动浏览器失败: {}", e),
                         video_id: None,
+                        view_count: None,
+                        favorite_count: None,
+                        cover_url: None,
                     };
                 }
             };
@@ -373,6 +376,9 @@ impl Scraper for D2Spider {
                         m3u8_url: String::new(),
                         message: format!("创建标签页失败: {}", e),
                         video_id: None,
+                        view_count: None,
+                        favorite_count: None,
+                        cover_url: None,
                     };
                 }
             };
@@ -424,6 +430,9 @@ impl Scraper for D2Spider {
                     m3u8_url: String::new(),
                     message: format!("导航失败: {}", nav_error),
                     video_id: None,
+                    view_count: None,
+                    favorite_count: None,
+                    cover_url: None,
                 };
             }
 
@@ -538,6 +547,9 @@ impl Scraper for D2Spider {
                         m3u8_url: String::new(),
                         message: format!("获取页面HTML失败: {}", e),
                         video_id: None,
+                        view_count: None,
+                        favorite_count: None,
+                        cover_url: None,
                     };
                 }
             };
@@ -574,6 +586,9 @@ impl Scraper for D2Spider {
                     m3u8_url: String::new(),
                     message: "页面中未找到视频卡片".to_string(),
                     video_id: None,
+                    view_count: None,
+                    favorite_count: None,
+                    cover_url: None,
                 };
             }
 
@@ -590,6 +605,9 @@ impl Scraper for D2Spider {
                 m3u8_url: first_video.m3u8_url.clone(),
                 message: format!("找到 {} 个视频 (点击卡片获取m3u8)", videos.len()),
                 video_id: Some(first_video.id.clone()),
+                view_count: first_video.view_count,
+                favorite_count: Some(first_video.favorite_count),
+                cover_url: None,
             }
         })
     }
@@ -640,6 +658,9 @@ impl Scraper for D2Spider {
                         m3u8_url: String::new(),
                         message: format!("启动浏览器失败: {}", e),
                         video_id: None,
+                        view_count: None,
+                        favorite_count: None,
+                        cover_url: None,
                     }];
                 }
             };
@@ -653,6 +674,9 @@ impl Scraper for D2Spider {
                         m3u8_url: String::new(),
                         message: format!("创建标签页失败: {}", e),
                         video_id: None,
+                        view_count: None,
+                        favorite_count: None,
+                        cover_url: None,
                     }];
                 }
             };
@@ -702,6 +726,9 @@ impl Scraper for D2Spider {
                     m3u8_url: String::new(),
                     message: "导航失败".to_string(),
                     video_id: None,
+                    view_count: None,
+                    favorite_count: None,
+                    cover_url: None,
                 }];
             }
 
@@ -860,6 +887,9 @@ impl Scraper for D2Spider {
                     m3u8_url: String::new(),
                     message: "页面中未找到视频卡片".to_string(),
                     video_id: None,
+                    view_count: None,
+                    favorite_count: None,
+                    cover_url: None,
                 }];
             }
 
@@ -872,6 +902,9 @@ impl Scraper for D2Spider {
                     m3u8_url: video.m3u8_url.clone(),
                     message: format!("播放:{} 收藏:{}", views_str, video.favorite_count),
                     video_id: Some(video.id),
+                    view_count: video.view_count,
+                    favorite_count: Some(video.favorite_count),
+                    cover_url: None,
                 }
             }).collect();
 

@@ -82,6 +82,12 @@ pub struct ScrapeResult {
     pub message: String,
     /// 视频ID（SRL爬虫使用实际视频ID，页码爬虫使用页码号）
     pub video_id: Option<String>,
+    /// 播放数
+    pub view_count: Option<i64>,
+    /// 收藏数
+    pub favorite_count: Option<i64>,
+    /// 封面图片URL（页面有URL则用URL，否则用视频第一帧的Base64）
+    pub cover_url: Option<String>,
 }
 
 /// 下载进度

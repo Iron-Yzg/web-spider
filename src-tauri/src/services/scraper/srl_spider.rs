@@ -220,6 +220,9 @@ impl crate::services::Scraper for SrlSpider {
                         m3u8_url: String::new(),
                         message: format!("请求失败: {}", e),
                         video_id: None,
+                        view_count: None,
+                        favorite_count: None,
+                        cover_url: None,
                     };
                 }
             };
@@ -231,6 +234,9 @@ impl crate::services::Scraper for SrlSpider {
                     m3u8_url: String::new(),
                     message: format!("请求失败: HTTP {}", response.status()),
                     video_id: None,
+                    view_count: None,
+                    favorite_count: None,
+                    cover_url: None,
                 };
             }
 
@@ -243,6 +249,9 @@ impl crate::services::Scraper for SrlSpider {
                         m3u8_url: String::new(),
                         message: format!("读取响应失败: {}", e),
                         video_id: None,
+                        view_count: None,
+                        favorite_count: None,
+                        cover_url: None,
                     };
                 }
             };
@@ -260,6 +269,9 @@ impl crate::services::Scraper for SrlSpider {
                     m3u8_url: String::new(),
                     message: "未找到视频链接".to_string(),
                     video_id: None,
+                    view_count: None,
+                    favorite_count: None,
+                    cover_url: None,
                 };
             }
 
@@ -291,6 +303,9 @@ impl crate::services::Scraper for SrlSpider {
                                 m3u8_url,
                                 message: "爬取成功".to_string(),
                                 video_id: Some(video_id.clone()),
+                                view_count: None,
+                                favorite_count: None,
+                                cover_url: None,
                             });
                             success_count += 1;
                         } else {
@@ -300,6 +315,9 @@ impl crate::services::Scraper for SrlSpider {
                                 m3u8_url: String::new(),
                                 message: "未找到m3u8地址".to_string(),
                                 video_id: Some(video_id.clone()),
+                                view_count: None,
+                                favorite_count: None,
+                                cover_url: None,
                             });
                         }
                     }
@@ -310,6 +328,9 @@ impl crate::services::Scraper for SrlSpider {
                             m3u8_url: String::new(),
                             message: "请求失败".to_string(),
                             video_id: Some(video_id.clone()),
+                            view_count: None,
+                            favorite_count: None,
+                            cover_url: None,
                         });
                     }
                 }
@@ -328,6 +349,9 @@ impl crate::services::Scraper for SrlSpider {
                     m3u8_url: first_result.m3u8_url,
                     message: format!("第{}页: 成功爬取 {} 个视频", page_number, success_count),
                     video_id: first_result.video_id.clone(),
+                    view_count: None,
+                    favorite_count: None,
+                    cover_url: None,
                 }
             } else {
                 ScrapeResult {
@@ -336,6 +360,9 @@ impl crate::services::Scraper for SrlSpider {
                     m3u8_url: String::new(),
                     message: format!("未找到可用的视频 (成功{}/{})", success_count, video_links.len()),
                     video_id: None,
+                    view_count: None,
+                    favorite_count: None,
+                    cover_url: None,
                 }
             }
         })
@@ -369,6 +396,9 @@ impl crate::services::Scraper for SrlSpider {
                         m3u8_url: String::new(),
                         message: format!("请求失败: {}", e),
                         video_id: None,
+                        view_count: None,
+                        favorite_count: None,
+                        cover_url: None,
                     }];
                 }
             };
@@ -380,6 +410,9 @@ impl crate::services::Scraper for SrlSpider {
                     m3u8_url: String::new(),
                     message: format!("请求失败: HTTP {}", response.status()),
                     video_id: None,
+                    view_count: None,
+                    favorite_count: None,
+                    cover_url: None,
                 }];
             }
 
@@ -392,6 +425,9 @@ impl crate::services::Scraper for SrlSpider {
                         m3u8_url: String::new(),
                         message: format!("读取响应失败: {}", e),
                         video_id: None,
+                        view_count: None,
+                        favorite_count: None,
+                        cover_url: None,
                     }];
                 }
             };
@@ -410,6 +446,9 @@ impl crate::services::Scraper for SrlSpider {
                     m3u8_url: String::new(),
                     message: "未找到视频链接".to_string(),
                     video_id: None,
+                    view_count: None,
+                    favorite_count: None,
+                    cover_url: None,
                 }];
             }
 
@@ -494,6 +533,9 @@ async fn scrape_single_video(
                     m3u8_url: String::new(),
                     message: "未找到播放器".to_string(),
                     video_id: Some(video_id.to_string()),
+                    view_count: None,
+                    favorite_count: None,
+                    cover_url: None,
                 });
                 let _ = log_callback(format!("  ✗ 未找到播放器: {}", video_id));
             } else {
@@ -530,6 +572,9 @@ async fn scrape_single_video(
                             m3u8_url: m3u8_url.clone(),
                             message: format!("第{}个播放器", player_idx + 1),
                             video_id: Some(unique_video_id.clone()),
+                            view_count: None,
+                            favorite_count: None,
+                            cover_url: None,
                         });
 
                         let _ = log_callback(format!("  ✓ [{}] 成功: {} ({})", player_idx + 1, name, m3u8_url));
@@ -548,6 +593,9 @@ async fn scrape_single_video(
                 m3u8_url: String::new(),
                 message: format!("HTTP错误: {}", resp.status()),
                 video_id: Some(video_id.to_string()),
+                view_count: None,
+                favorite_count: None,
+                cover_url: None,
             });
             let _ = log_callback(format!("  ✗ HTTP错误 {}: video_{}", resp.status(), video_id));
         }
@@ -558,6 +606,9 @@ async fn scrape_single_video(
                 m3u8_url: String::new(),
                 message: format!("请求失败: {}", e),
                 video_id: Some(video_id.to_string()),
+                view_count: None,
+                favorite_count: None,
+                cover_url: None,
             });
             let _ = log_callback(format!("  ✗ 请求失败: video_{} - {}", video_id, e));
         }

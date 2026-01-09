@@ -23,6 +23,23 @@ impl D1Spider {
     }
 }
 
+/// 解析数字字符串（如 "1.7万"、"991"）为 i64
+fn parse_count(count_str: &str) -> Option<i64> {
+    let cleaned = count_str.trim()
+        .replace(",", "")
+        .replace(" ", "");
+
+    // 处理中文数字（万）
+    if let Some(idx) = cleaned.find('万') {
+        let num_part = &cleaned[..idx];
+        if let Ok(num) = num_part.parse::<f64>() {
+            return Some((num * 10000.0) as i64);
+        }
+    }
+
+    cleaned.parse::<i64>().ok()
+}
+
 impl Scraper for D1Spider {
     fn id(&self) -> &'static str {
         "d1"
@@ -74,6 +91,9 @@ impl Scraper for D1Spider {
                         m3u8_url: String::new(),
                         message: format!("启动浏览器失败: {}", e),
                         video_id: Some(video_id.clone()),
+                        view_count: None,
+                        favorite_count: None,
+                        cover_url: None,
                     };
                 }
             };
@@ -87,6 +107,9 @@ impl Scraper for D1Spider {
                         m3u8_url: String::new(),
                         message: format!("创建标签页失败: {}", e),
                         video_id: Some(video_id.clone()),
+                        view_count: None,
+                        favorite_count: None,
+                        cover_url: None,
                     };
                 }
             };
@@ -108,7 +131,7 @@ impl Scraper for D1Spider {
                         if captured.is_none() {
                             *captured = Some(url.clone());
                             let msg = format!("捕获到m3u8: {}", url);
-                            eprintln!("[SCRAPER] {}", msg);
+                            // eprintln!("[SCRAPER] {}", msg);
                             log_callback_for_response(msg);
                         }
                     }
@@ -146,6 +169,9 @@ impl Scraper for D1Spider {
                     m3u8_url: String::new(),
                     message: format!("导航失败: {}", nav_error),
                     video_id: Some(video_id.clone()),
+                    view_count: None,
+                    favorite_count: None,
+                    cover_url: None,
                 };
             }
 
@@ -162,6 +188,7 @@ impl Scraper for D1Spider {
                     let _ = tab.evaluate(&inject_js, false);
                 }
                 let _ = tab.reload(true, None);
+                let _ = log_callback(format!("已注入 {} 个 localStorage 项", local_storage.len()));
                 // 等待页面重新加载完成
                 tokio::time::sleep(Duration::from_secs(2)).await;
             }
@@ -200,6 +227,9 @@ impl Scraper for D1Spider {
                             m3u8_url: String::new(),
                             message: "资源不存在，该视频可能已被删除或ID无效".to_string(),
                             video_id: Some(video_id.clone()),
+                            view_count: None,
+                            favorite_count: None,
+                            cover_url: None,
                         };
                     }
                 }
@@ -207,29 +237,96 @@ impl Scraper for D1Spider {
                 tokio::time::sleep(Duration::from_millis(500)).await;
             }
 
-            // 如果找到 m3u8，立即提取标题
+            // 如果找到 m3u8，立即提取标题和其他数据
+            let mut name = format!("视频_{}", video_id);
+            let mut view_count: Option<i64> = None;
+            let mut favorite_count: Option<i64> = None;
+            let mut cover_url: Option<String> = None;
+
             if let Some(ref m3u8_url) = found_url {
+                let _ = log_callback("正在提取视频信息...".to_string());
 
-                // 提取视频名称 - 使用 Element API
-                let name = if let Ok(element) = tab.wait_for_xpath("//div[@class='video-title']") {
-
-                    match element.get_inner_text() {
-                        Ok(text) => {
-                            let trimmed = text.trim().to_string();
-                            if trimmed.is_empty() {
-                                format!("视频_{}", video_id)
-                            } else {
-                                trimmed
-                            }
-                        }
-                        Err(_e) => {
-                            format!("视频_{}", video_id)
+                // 提取视频名称
+                if let Ok(element) = tab.wait_for_xpath("//div[@class='video-title']") {
+                    if let Ok(text) = element.get_inner_text() {
+                        let trimmed = text.trim().to_string();
+                        if !trimmed.is_empty() {
+                            name = trimmed;
+                            let _ = log_callback(format!("视频名称: {}", name));
                         }
                     }
-                } else {
+                }
 
-                    format!("视频_{}", video_id)
-                };
+                // 提取播放数和收藏数
+                // DOM结构: <li data-v-3298636b=""><div data-v-3298636b=""><i class="van-icon van-icon-like"></i> 1.7万</div><div data-v-3298636b=""><i class="van-icon van-icon-star"></i> 991</div></li>
+                let count_js = r#"
+                    (() => {
+                        let playText = '';
+                        let favText = '';
+                        // 查找包含 van-icon-like 的元素附近的 div
+                        const likeIcon = document.querySelector('.van-icon-like');
+                        if (likeIcon && likeIcon.parentElement) {
+                            playText = likeIcon.parentElement.innerText.trim();
+                        }
+                        // 查找包含 van-icon-star 的元素
+                        const starIcon = document.querySelector('.van-icon-star');
+                        if (starIcon && starIcon.parentElement) {
+                            favText = starIcon.parentElement.innerText.trim();
+                        }
+                        // 返回简单字符串格式
+                        return playText + '|' + favText;
+                    })()
+                "#;
+
+                let _ = log_callback("正在提取播放和收藏数...".to_string());
+                if let Ok(result) = tab.evaluate(count_js, false) {
+                    // eprintln!("[DEBUG] count_js result: {:?}", result);
+                    if let Some(value) = result.value.as_ref().and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+                        let parts: Vec<&str> = value.split('|').collect();
+                        // eprintln!("[DEBUG] count_js value: {:?}", value);
+                        if parts.len() >= 1 && !parts[0].is_empty() {
+                            view_count = parse_count(parts[0]);
+                            let _ = log_callback(format!("播放数: {}", parts[0]));
+                            // eprintln!("[DEBUG] play_count: {:?} = {:?}", parts[0], view_count);
+                        }
+                        if parts.len() >= 2 && !parts[1].is_empty() {
+                            favorite_count = parse_count(parts[1]);
+                            let _ = log_callback(format!("收藏数: {}", parts[1]));
+                            // eprintln!("[DEBUG] favorite_count: {:?} = {:?}", parts[1], favorite_count);
+                        }
+                    } else if let Some(ref value) = result.value {
+                        let _ = log_callback(format!("[DEBUG] count_js result: {:?}", value));
+                    }
+                }
+
+                // 捕获视频第一帧作为封面
+                let cover_js = r#"
+                    (() => {
+                        const video = document.querySelector('video');
+                        if (video && video.videoWidth > 0) {
+                            const canvas = document.createElement('canvas');
+                            canvas.width = video.videoWidth;
+                            canvas.height = video.videoHeight;
+                            const ctx = canvas.getContext('2d');
+                            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                            return canvas.toDataURL('image/jpeg', 0.8);
+                        }
+                        return '';
+                    })()
+                "#;
+
+                // 等待视频加载
+                let _ = log_callback("等待视频加载 (3秒)...".to_string());
+                tokio::time::sleep(Duration::from_secs(3)).await;
+
+                if let Ok(result) = tab.evaluate(cover_js, false) {
+                    if let Some(base64) = result.value.as_ref().and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+                        cover_url = Some(base64.to_string());
+                        let _ = log_callback(format!("封面截图成功, 长度: {} chars", base64.len()));
+                    } else {
+                        let _ = log_callback(format!("封面截图失败或为空"));
+                    }
+                }
 
                 // 清理 _0001
                 let mut final_url = m3u8_url.clone();
@@ -248,6 +345,9 @@ impl Scraper for D1Spider {
                     m3u8_url: final_url,
                     message: "成功找到 m3u8 地址".to_string(),
                     video_id: Some(video_id.clone()),
+                    view_count,
+                    favorite_count,
+                    cover_url,
                 }
             } else {
                 // 未找到 m3u8
@@ -261,6 +361,9 @@ impl Scraper for D1Spider {
                     m3u8_url: String::new(),
                     message: "未能找到 m3u8 地址".to_string(),
                     video_id: Some(video_id.clone()),
+                    view_count: None,
+                    favorite_count: None,
+                    cover_url: None,
                 }
             }
         })

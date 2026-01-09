@@ -227,9 +227,9 @@ pub async fn download_m3u8(
     let key_path = temp_dir.join("decrypt.key");
     let _ = fs::create_dir_all(&temp_dir);
 
-    eprintln!("[DOWNLOAD] temp_filename: {}", temp_filename);
-    eprintln!("[DOWNLOAD] final video_path: {:?}", video_path);
-    eprintln!("[DOWNLOAD] temp_dir: {:?}", temp_dir);
+    // eprintln!("[DOWNLOAD] temp_filename: {}", temp_filename);
+    // eprintln!("[DOWNLOAD] final video_path: {:?}", video_path);
+    // eprintln!("[DOWNLOAD] temp_dir: {:?}", temp_dir);
 
     // 下载m3u8文件
     progress_callback(DownloadProgress {
@@ -262,8 +262,8 @@ pub async fn download_m3u8(
         return Err("m3u8文件内容无效或不包含#EXTM3U".to_string());
     }
 
-    eprintln!("[DOWNLOAD] m3u8 content length: {}", m3u8_content.len());
-    eprintln!("[DOWNLOAD] m3u8 first 300 chars: {}", &m3u8_content[..300.min(m3u8_content.len())]);
+    // eprintln!("[DOWNLOAD] m3u8 content length: {}", m3u8_content.len());
+    // eprintln!("[DOWNLOAD] m3u8 first 300 chars: {}", &m3u8_content[..300.min(m3u8_content.len())]);
 
     progress_callback(DownloadProgress {
         video_id: video_id.to_string(),
@@ -275,8 +275,8 @@ pub async fn download_m3u8(
 
     // 检查加密状态
     let encryption_info = parse_encryption_info(&m3u8_content, m3u8_url);
-    eprintln!("[DOWNLOAD] encrypted: {:?}", encryption_info.encrypted);
-    eprintln!("[DOWNLOAD] key_url: {:?}", encryption_info.key_url);
+    // eprintln!("[DOWNLOAD] encrypted: {:?}", encryption_info.encrypted);
+    // eprintln!("[DOWNLOAD] key_url: {:?}", encryption_info.key_url);
 
     let mut local_key_path: Option<String> = None;
 
@@ -303,19 +303,19 @@ pub async fn download_m3u8(
                 format!("{}?{}", key_url, query)
             };
 
-            eprintln!("[DOWNLOAD] key_url_with_token: {}", key_url_with_token);
+            // eprintln!("[DOWNLOAD] key_url_with_token: {}", key_url_with_token);
 
             // 下载密钥
             match client.get(&key_url_with_token).send().await {
                 Ok(resp) => {
-                    eprintln!("[DOWNLOAD] key response status: {}", resp.status());
+                    // eprintln!("[DOWNLOAD] key response status: {}", resp.status());
                     if resp.status().is_success() {
                         match resp.bytes().await {
                             Ok(key_data) => {
-                                eprintln!("[DOWNLOAD] key_data length: {}", key_data.len());
+                                // eprintln!("[DOWNLOAD] key_data length: {}", key_data.len());
                                 let _ = fs::write(&key_path, &key_data);
                                 local_key_path = Some(key_path.to_string_lossy().to_string());
-                                eprintln!("[DOWNLOAD] key saved to: {:?}", key_path);
+                                // eprintln!("[DOWNLOAD] key saved to: {:?}", key_path);
 
                                 progress_callback(DownloadProgress {
                                     video_id: video_id.to_string(),
@@ -358,7 +358,7 @@ pub async fn download_m3u8(
                 // 处理密钥URI替换 - 支持带引号和不带引号的格式
                 if line.starts_with("#EXT-X-KEY:METHOD=AES-128,URI=") {
                     if let Some(local_key) = &local_key_path {
-                        eprintln!("[DOWNLOAD] Replacing key URI with: {}", local_key);
+                        // eprintln!("[DOWNLOAD] Replacing key URI with: {}", local_key);
                         return format!("#EXT-X-KEY:METHOD=AES-128,URI=\"{}\"", local_key);
                     }
                 }
@@ -378,8 +378,8 @@ pub async fn download_m3u8(
             .collect::<Vec<_>>()
             .join("\n");
         let _ = fs::write(&playlist_path, &modified);
-        eprintln!("[DOWNLOAD] Modified m3u8 saved");
-        eprintln!("[DOWNLOAD] Modified content preview (first 500 chars):\n{}", &modified[..500.min(modified.len())]);
+        // eprintln!("[DOWNLOAD] Modified m3u8 saved");
+        // eprintln!("[DOWNLOAD] Modified content preview (first 500 chars):\n{}", &modified[..500.min(modified.len())]);
     } else {
         eprintln!("[DOWNLOAD] ERROR: Could not read playlist file");
     }
@@ -420,7 +420,7 @@ pub async fn download_m3u8(
                     if let Err(e) = fs::rename(&video_path, &target_path) {
                         eprintln!("[DOWNLOAD] 重命名失败，使用临时文件名: {}", e);
                     } else {
-                        eprintln!("[DOWNLOAD] 已重命名为: {}", video_name);
+                        // eprintln!("[DOWNLOAD] 已重命名为: {}", video_name);
                     }
                     target_path
                 } else {
@@ -483,7 +483,7 @@ pub async fn download_m3u8(
                         if let Err(e) = fs::rename(&video_path, &target_path) {
                             eprintln!("[DOWNLOAD] 重命名失败，使用临时文件名: {}", e);
                         } else {
-                            eprintln!("[DOWNLOAD] 已重命名为: {}", video_name);
+                            // eprintln!("[DOWNLOAD] 已重命名为: {}", video_name);
                         }
                     }
 

@@ -149,9 +149,10 @@ pub async fn scrape_video(
                 downloaded_at: None,
                 scrape_id: actual_video_id,
                 website_name: website_name.clone(),
-                cover_url: None,
-                favorite_count: None,
-                view_count: None,
+                // 优先使用 cover_url，没有就用视频第一帧的Base64
+                cover_url: result.cover_url.clone(),
+                favorite_count: result.favorite_count,
+                view_count: result.view_count,
             };
             match db.add_video(&video).await {
                 Ok(_) => {
@@ -180,6 +181,9 @@ pub async fn scrape_video(
             m3u8_url: String::new(),
             message: format!("成功爬取 {} / {} 个视频 (新增: {}, 已存在: {})", success_count, total_count, saved_count, duplicate_count),
             video_id: Some(video_id.clone()),
+            view_count: None,
+            favorite_count: None,
+            cover_url: None,
         })
     } else if let Some(first_fail) = results.iter().find(|r| !r.success) {
         Ok(ScrapeResult {
@@ -188,6 +192,9 @@ pub async fn scrape_video(
             m3u8_url: String::new(),
             message: first_fail.message.clone(),
             video_id: Some(video_id.clone()),
+            view_count: None,
+            favorite_count: None,
+            cover_url: None,
         })
     } else {
         Ok(ScrapeResult {
@@ -196,6 +203,9 @@ pub async fn scrape_video(
             m3u8_url: String::new(),
             message: "爬取失败".to_string(),
             video_id: Some(video_id.clone()),
+            view_count: None,
+            favorite_count: None,
+            cover_url: None,
         })
     }
 }
