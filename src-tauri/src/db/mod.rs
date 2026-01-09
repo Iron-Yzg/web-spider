@@ -64,7 +64,7 @@ impl Database {
     /// 创建新的数据库实例
     pub async fn new(data_dir: &PathBuf) -> Result<Self, sqlx::Error> {
         let db_path = data_dir.join("web-spider.db");
-        eprintln!("DB: Connecting to database: {:?}", db_path);
+        // eprintln!("DB: Connecting to database: {:?}", db_path);
 
         // 确保目录存在
         if let Some(parent) = db_path.parent() {
@@ -78,7 +78,6 @@ impl Database {
         let options = SqliteConnectOptions::from_str(&format!("file:{}", db_path.to_string_lossy()))
             .map_err(|e| sqlx::Error::Protocol(e.to_string()))?
             .create_if_missing(true);
-        eprintln!("DB: Using SQLiteConnectOptions");
 
         let pool = SqlitePool::connect_with(options).await?;
 

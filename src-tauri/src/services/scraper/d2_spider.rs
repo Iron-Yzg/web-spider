@@ -42,7 +42,7 @@ fn extract_videos_from_html(html: &str) -> Vec<VideoInfo> {
     let cover_pattern = Regex::new(r#"<img[^>]*class="[^"]*wh-full[^"]*d-block[^"]*"[^>]*data-src="([^"]*)"[^>]*"#).unwrap();
     let cover_pattern2 = Regex::new(r#"<img[^>]*class="[^"]*wh-full[^"]*d-block[^"]*"[^>]*src="([^"]*)"[^>]*"#).unwrap();
     let cover_pattern3 = Regex::new(r#"<img[^>]*class="[^"]*wh-full[^"]*d-block[^"]*"[^>]*:src="([^"]*)"[^>]*"#).unwrap();
-    let cover_pattern4 = Regex::new(r#"<img[^>]*class="[^"]*wh-full[^"]*d-block[^"]*"[^>]*srcset="[^"]*"[^>]*"#).unwrap();
+    let _cover_pattern4 = Regex::new(r#"<img[^>]*class="[^"]*wh-full[^"]*d-block[^"]*"[^>]*srcset="[^"]*"[^>]*"#).unwrap();
 
     let duration_pattern = Regex::new(r#"<div[^>]*class="[^"]*collectPack[^"]*"[^>]*>(\d{1,2}:\d{2}:\d{2})</div>"#).unwrap();
 
@@ -141,12 +141,12 @@ fn extract_videos_from_html(html: &str) -> Vec<VideoInfo> {
         videos.push(VideoInfo {
             id: video_id,
             name,
-            cover_url,
-            m3u8_url: String::new(),
-            duration,
+            _cover_url: cover_url,
+            _m3u8_url: String::new(),
+            _duration: duration,
             favorite_count,
             view_count: Some(parse_view_count(&views)),
-            tag: String::new(),
+            _tag: String::new(),
         });
     }
 
@@ -239,12 +239,12 @@ fn extract_videos_from_html(html: &str) -> Vec<VideoInfo> {
             videos.push(VideoInfo {
                 id: video_id,
                 name,
-                cover_url,
-                m3u8_url: String::new(),
-                duration,
+                _cover_url: cover_url,
+                _m3u8_url: String::new(),
+                _duration: duration,
                 favorite_count,
                 view_count: Some(parse_view_count(&views)),
-                tag: String::new(),
+                _tag: String::new(),
             });
         }
     }
@@ -602,7 +602,7 @@ impl Scraper for D2Spider {
             ScrapeResult {
                 success: true,
                 name: first_video.name.clone(),
-                m3u8_url: first_video.m3u8_url.clone(),
+                m3u8_url: first_video._m3u8_url.clone(),
                 message: format!("找到 {} 个视频 (点击卡片获取m3u8)", videos.len()),
                 video_id: Some(first_video.id.clone()),
                 view_count: first_video.view_count,
@@ -899,7 +899,7 @@ impl Scraper for D2Spider {
                 ScrapeResult {
                     success: true,
                     name: video.name.clone(),
-                    m3u8_url: video.m3u8_url.clone(),
+                    m3u8_url: video._m3u8_url.clone(),
                     message: format!("播放:{} 收藏:{}", views_str, video.favorite_count),
                     video_id: Some(video.id),
                     view_count: video.view_count,
@@ -916,14 +916,15 @@ impl Scraper for D2Spider {
 }
 
 /// 视频信息结构体
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 struct VideoInfo {
     id: String,
     name: String,
-    cover_url: String,
-    m3u8_url: String,
-    duration: String,
+    _cover_url: String,
+    _m3u8_url: String,
+    _duration: String,
     favorite_count: i64,
     view_count: Option<i64>,
-    tag: String,
+    _tag: String,
 }

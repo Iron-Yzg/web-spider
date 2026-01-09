@@ -6,7 +6,7 @@ use std::pin::Pin;
 /// 播放器信息
 #[derive(Debug, Clone)]
 pub struct PlayerInfo {
-    pub video_id: String,
+    pub _video_id: String,
     pub video_type_id: String,
     pub m3u8_urls: Vec<String>,
 }
@@ -32,7 +32,7 @@ impl SrlSpider {
     }
 
     /// 从页面URL中提取视频ID
-    fn extract_video_id(href: &str) -> Option<String> {
+    fn _extract_video_id(href: &str) -> Option<String> {
         // href format: /archives/203413.html
         href.strip_prefix("/archives/").and_then(|s| {
             s.strip_suffix(".html").map(|s| s.to_string())
@@ -96,7 +96,7 @@ impl SrlSpider {
             };
 
             players.push(PlayerInfo {
-                video_id,
+                _video_id: video_id,
                 video_type_id,
                 m3u8_urls: vec![m3u8_url],
             });
@@ -113,7 +113,7 @@ impl SrlSpider {
                     m3u8
                 };
                 players.push(PlayerInfo {
-                    video_id: format!("player_{}", i + 1),
+                    _video_id: format!("player_{}", i + 1),
                     video_type_id: format!("{}", i + 1),
                     m3u8_urls: vec![url],
                 });

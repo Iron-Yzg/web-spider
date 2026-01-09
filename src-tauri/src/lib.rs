@@ -31,7 +31,7 @@ pub fn run() {
         data_dir
     };
 
-    eprintln!("Using data directory: {:?}", data_dir);
+    // eprintln!("Using data directory: {:?}", data_dir);
 
     let database = runtime.block_on(async {
         db::Database::new(&data_dir).await.expect("Failed to initialize database")
