@@ -18,13 +18,13 @@
     "build:android": "tauri android build",
     "build:ios:release": "tauri ios build --release",
     "build:android:release": "tauri android build --release",
-    "clean": "cargo clean && rm -rf node_modules/.vite",
-    "clean:all": "cargo clean && rm -rf node_modules && rm -rf src-tauri/target",
+    "clean": "cargo clean --manifest-path=src-tauri/Cargo.toml && rm -rf node_modules/.vite && rm -rf src-tauri/gen",
+    "clean:all": "cargo clean --manifest-path=src-tauri/Cargo.toml && rm -rf node_modules && rm -rf src-tauri/target && rm -rf src-tauri/Cargo.lock && rm -rf src-tauri/gen",
     "lint": "vue-tsc --noEmit"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
-    "@tauri-apps/plugin-dialog": "^2.4.2",
+    "@tauri-apps/plugin-dialog": "^2.5.0",
     "@tauri-apps/plugin-opener": "^2",
     "artplayer": "^5.3.0",
     "hls.js": "^1.6.15",
