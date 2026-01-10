@@ -26,10 +26,13 @@ uuid = { version = "1.6", features = ["v4", "serde"] }
 tokio = { version = "1", features = ["full"] }
 futures = "0.3"
 thiserror = "1"
-headless_chrome = "1.0"
+# headless_chrome 仅桌面端需要
+headless_chrome = { version = "1.0", optional = true }
 url = "2"
 sqlx = { version = "0.7", features = ["sqlite", "runtime-tokio"] }
 
 [features]
-default = ["custom-protocol"]
+default = ["custom-protocol", "desktop"]
 custom-protocol = ["tauri/custom-protocol"]
+desktop = ["headless_chrome"]
+mobile = []

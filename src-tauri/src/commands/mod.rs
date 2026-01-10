@@ -7,8 +7,6 @@ use crate::db::{Database, PaginatedVideos};
 use crate::models::{
     AppConfig, DownloadProgress, ScrapeResult, VideoItem, VideoStatus, Website,
 };
-use crate::services::download_m3u8;
-use crate::services::{batch_download_concurrent, is_downloading, Scraper, ScraperFactory, ScraperInfo, get_available_scrapers};
 
 #[tauri::command]
 pub async fn get_config(db: State<'_, Database>) -> Result<AppConfig, String> {
@@ -20,8 +18,15 @@ pub async fn update_config(db: State<'_, Database>, config: AppConfig) -> Result
     db.save_config(&config).await.map_err(|e| e.to_string())
 }
 
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub fn select_directory(_window: WebviewWindow) -> Result<String, String> {
+    Err("DIALOG_REQUIRED".to_string())
+}
+
+#[cfg(not(feature = "desktop"))]
+#[tauri::command]
+pub fn select_directory() -> Result<String, String> {
     Err("DIALOG_REQUIRED".to_string())
 }
 
@@ -56,6 +61,14 @@ pub async fn search_videos(
         .map_err(|e| e.to_string())
 }
 
+// ===== 桌面端爬虫相关命令 =====
+
+#[cfg(feature = "desktop")]
+use crate::services::download_m3u8;
+#[cfg(feature = "desktop")]
+use crate::services::{batch_download_concurrent, is_downloading, Scraper, ScraperFactory, ScraperInfo, get_available_scrapers};
+
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn scrape_video(
     window: WebviewWindow,
@@ -210,6 +223,7 @@ pub async fn scrape_video(
     }
 }
 
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn download_video(
     window: WebviewWindow,
@@ -281,16 +295,19 @@ pub async fn delete_video(db: State<'_, Database>, video_id: String) -> Result<(
     db.delete_video(&video_id).await.map_err(|e| e.to_string())
 }
 
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn clear_downloaded(db: State<'_, Database>) -> Result<(), String> {
     db.clear_downloaded().await.map_err(|e| e.to_string())
 }
 
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub fn check_ffmpeg() -> bool {
     crate::services::check_ffmpeg()
 }
 
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn batch_download(
     window: WebviewWindow,
@@ -374,16 +391,19 @@ pub async fn get_websites(db: State<'_, Database>) -> Result<Vec<Website>, Strin
     db.get_all_websites().await.map_err(|e| e.to_string())
 }
 
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn save_website(db: State<'_, Database>, website: Website) -> Result<(), String> {
     db.save_website(&website).await.map_err(|e| e.to_string())
 }
 
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn delete_website(db: State<'_, Database>, website_id: String) -> Result<(), String> {
     db.delete_website(&website_id).await.map_err(|e| e.to_string())
 }
 
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn set_default_website(db: State<'_, Database>, website_id: String) -> Result<(), String> {
     db.set_default_website(&website_id).await.map_err(|e| e.to_string())
@@ -391,6 +411,7 @@ pub async fn set_default_website(db: State<'_, Database>, website_id: String) ->
 
 // ===== 爬虫管理命令 =====
 
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub fn get_scrapers() -> Vec<ScraperInfo> {
     get_available_scrapers()

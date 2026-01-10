@@ -3,16 +3,22 @@
 mod commands;
 mod db;
 mod models;
+
+#[cfg(feature = "desktop")]
 mod services;
 
 use std::path::PathBuf;
 
 pub use models::{AppConfig, DownloadProgress, LocalStorageItem, ScrapeResult, VideoItem, VideoStatus, Website};
-pub use services::{AppState, AppState as AppStateTrait};
 pub use db::{Database, PaginatedVideos};
+
+#[cfg(feature = "desktop")]
+pub use services::{AppState, AppState as AppStateTrait};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // 桌面端才需要 AppState（用于爬虫和下载状态管理）
+    #[cfg(feature = "desktop")]
     let app_state = services::AppState::new();
 
     // 初始化数据库
@@ -63,31 +69,55 @@ pub fn run() {
         db::Database::new(&data_dir).await.expect("Failed to initialize database")
     });
 
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .manage(app_state)
-        .manage(database)
-        .invoke_handler(tauri::generate_handler![
-            commands::get_config,
-            commands::update_config,
-            commands::select_directory,
-            commands::get_videos,
-            commands::get_videos_paginated,
-            commands::search_videos,
-            commands::scrape_video,
-            commands::download_video,
-            commands::batch_download,
-            commands::delete_video,
-            commands::clear_downloaded,
-            commands::check_ffmpeg,
-            commands::get_websites,
-            commands::save_website,
-            commands::delete_website,
-            commands::set_default_website,
-            commands::get_scrapers,
-            commands::get_videos_by_website,
-        ])
+        .manage(database);
+
+    // 仅桌面端管理 AppState 和爬虫相关命令
+    #[cfg(feature = "desktop")]
+    {
+        builder = builder
+            .manage(app_state)
+            .invoke_handler(tauri::generate_handler![
+                commands::get_config,
+                commands::update_config,
+                commands::select_directory,
+                commands::get_videos,
+                commands::get_videos_paginated,
+                commands::search_videos,
+                commands::scrape_video,
+                commands::download_video,
+                commands::batch_download,
+                commands::delete_video,
+                commands::clear_downloaded,
+                commands::check_ffmpeg,
+                commands::get_websites,
+                commands::save_website,
+                commands::delete_website,
+                commands::set_default_website,
+                commands::get_scrapers,
+                commands::get_videos_by_website,
+            ]);
+    }
+
+    #[cfg(not(feature = "desktop"))]
+    {
+        // 移动端只需要基本的视频播放功能
+        builder = builder
+            .invoke_handler(tauri::generate_handler![
+                commands::get_config,
+                commands::update_config,
+                commands::get_videos,
+                commands::get_videos_paginated,
+                commands::search_videos,
+                commands::delete_video,
+                commands::get_websites,
+                commands::get_videos_by_website,
+            ]);
+    }
+
+    builder
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

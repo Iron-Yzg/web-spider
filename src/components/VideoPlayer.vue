@@ -35,6 +35,7 @@ const emit = defineEmits<{
 
 const containerRef = ref<HTMLDivElement | null>(null)
 const artRef = ref<Artplayer | null>(null)
+const hlsRef = ref<Hls | null>(null)
 const isLoading = ref(true)
 const error = ref<string | null>(null)
 
@@ -133,10 +134,13 @@ function createPlayer() {
   // HLS 特殊处理
   if (isM3U8 && Hls.isSupported()) {
     const hls = new Hls({
-      enableWorker: true,
-      lowLatencyMode: true,
+      enableWorker: false, // 关闭 worker 以降低CPU占用
+      lowLatencyMode: false,
       backBufferLength: 90,
+      maxBufferLength: 30, // 减少缓冲长度
+      maxMaxBufferLength: 60,
     })
+    hlsRef.value = hls
 
     hls.loadSource(props.src)
     hls.attachMedia(art.video)
@@ -158,6 +162,7 @@ function createPlayer() {
             break
           default:
             error.value = `播放错误: ${data.type}`
+            hlsRef.value = null
             hls.destroy()
             break
         }
@@ -203,6 +208,12 @@ function createPlayer() {
 
 // 销毁播放器
 function destroyPlayer() {
+  // 先销毁 HLS 实例
+  if (hlsRef.value) {
+    hlsRef.value.destroy()
+    hlsRef.value = null
+  }
+  // 再销毁 ArtPlayer
   if (artRef.value) {
     artRef.value.destroy()
     artRef.value = null
