@@ -43,7 +43,6 @@ const pageSize = 20
 const total = ref(0)
 const hasMore = ref(false)
 const isLoadingMore = ref(false)
-const tableBodyRef = ref<HTMLElement | null>(null)
 
 // 播放器状态
 const playerVisible = ref(false)
