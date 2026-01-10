@@ -246,17 +246,11 @@ impl Scraper for SrlSpider {
                 let video_id = item.video_id.clone();
                 let spider = spider.clone();
                 let result_tx = result_tx.clone();
-                let log_tx = log_callback.clone();
 
                 tokio::spawn(async move {
                     let m3u8_url = spider.fetch_m3u8_from_detail(&video_id).await;
                     let _ = result_tx.send((video_id.clone(), m3u8_url.clone())).await;
-                    // 实时输出日志
-                    if m3u8_url.is_some() {
-                        log_tx(format!("✓ {}", video_id));
-                    } else {
-                        log_tx(format!("✗ {}", video_id));
-                    }
+                    
                 });
             }
 
@@ -353,7 +347,6 @@ impl Scraper for SrlSpider {
                 let video_id = item.video_id.clone();
                 let spider = spider.clone();
                 let result_tx = result_tx.clone();
-                let log_tx = log_callback.clone();
 
                 tokio::spawn(async move {
                     let m3u8_url = spider.fetch_m3u8_from_detail(&video_id).await;

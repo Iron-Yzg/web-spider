@@ -25,6 +25,31 @@ const confirmDialog = ref<{ visible: boolean, message: string, onConfirm: (() =>
   onConfirm: null
 })
 
+// 封面浮窗状态
+const coverPopupVisible = ref(false)
+const coverPopupImage = ref('')
+const coverPopupPosition = ref({ x: 0, y: 0 })
+
+// 显示封面浮窗
+function showCoverPopup(event: MouseEvent, imageUrl: string) {
+  coverPopupImage.value = imageUrl
+  coverPopupPosition.value = { x: event.clientX, y: event.clientY }
+  coverPopupVisible.value = true
+}
+
+// 隐藏封面浮窗
+function hideCoverPopup() {
+  coverPopupVisible.value = false
+  coverPopupImage.value = ''
+}
+
+// 移动封面浮窗
+function moveCoverPopup(event: MouseEvent) {
+  if (coverPopupVisible.value) {
+    coverPopupPosition.value = { x: event.clientX, y: event.clientY }
+  }
+}
+
 // 网站选择
 const websites = ref<Website[]>([])
 const selectedWebsite = ref<string>('')
@@ -683,6 +708,9 @@ function handleImageError(event: Event) {
                 :alt="video.name"
                 class="cover-thumbnail"
                 @error="handleImageError"
+                @mouseenter="showCoverPopup($event, video.cover_url)"
+                @mousemove="moveCoverPopup($event)"
+                @mouseleave="hideCoverPopup"
               />
               <div v-else class="cover-placeholder-small">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -811,6 +839,25 @@ function handleImageError(event: Event) {
             <button class="confirm-btn ok" @click="handleConfirm">确定</button>
           </div>
         </div>
+      </div>
+    </Teleport>
+
+    <!-- 封面浮窗（放大2倍显示） -->
+    <Teleport to="body">
+      <div
+        v-if="coverPopupVisible"
+        class="cover-popup"
+        :style="{
+          left: coverPopupPosition.x + 20 + 'px',
+          top: coverPopupPosition.y - 150 + 'px'
+        }"
+        @mouseleave="hideCoverPopup"
+      >
+        <img
+          :src="coverPopupImage"
+          alt="封面预览"
+          class="cover-popup-image"
+        />
       </div>
     </Teleport>
 
@@ -1418,5 +1465,24 @@ function handleImageError(event: Event) {
 
 .confirm-btn.ok:hover {
   background: #4338ca;
+}
+
+/* 封面浮窗 */
+.cover-popup {
+  position: fixed;
+  z-index: 1000;
+  padding: 8px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+  pointer-events: auto;
+}
+
+.cover-popup-image {
+  width: 400px;
+  height: auto;
+  object-fit: contain;
+  border-radius: 4px;
+  display: block;
 }
 </style>

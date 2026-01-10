@@ -5,6 +5,8 @@ mod db;
 mod models;
 mod services;
 
+use std::path::PathBuf;
+
 pub use models::{AppConfig, DownloadProgress, LocalStorageItem, ScrapeResult, VideoItem, VideoStatus, Website};
 pub use services::{AppState, AppState as AppStateTrait};
 pub use db::{Database, PaginatedVideos};
@@ -16,19 +18,43 @@ pub fn run() {
     // 初始化数据库
     let runtime = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
     let data_dir = {
-        // macOS: ~/Library/Application Support/web-spider
-        let data_dir = if let Some(home_dir) = dirs::home_dir() {
-            home_dir.join("Library/Application Support/web-spider")
-        } else if let Some(data_dir) = dirs::data_dir() {
-            data_dir.join("web-spider")
-        } else {
-            std::path::PathBuf::from("./data")
-        };
-        // 确保目录存在
-        if let Err(e) = std::fs::create_dir_all(&data_dir) {
-            eprintln!("Warning: Failed to create data directory: {}", e);
+        #[cfg(target_os = "ios")]
+        {
+            // iOS: 使用 Documents 目录（沙盒内）
+            let data_dir = if let Some(documents) = dirs::document_dir() {
+                documents.join("web-spider")
+            } else {
+                PathBuf::from("./Documents/web-spider")
+            };
+            // 确保目录存在
+            if let Err(e) = std::fs::create_dir_all(&data_dir) {
+                eprintln!("Warning: Failed to create data directory: {}", e);
+            }
+            data_dir
         }
-        data_dir
+
+        #[cfg(not(target_os = "ios"))]
+        {
+            // macOS/Linux/Windows: 使用标准数据目录
+            let data_dir = if let Some(home_dir) = dirs::home_dir() {
+                if home_dir.join("Library/Application Support").exists() {
+                    home_dir.join("Library/Application Support/web-spider")
+                } else if let Some(data_dir) = dirs::data_dir() {
+                    data_dir.join("web-spider")
+                } else {
+                    PathBuf::from("./data")
+                }
+            } else if let Some(data_dir) = dirs::data_dir() {
+                data_dir.join("web-spider")
+            } else {
+                PathBuf::from("./data")
+            };
+            // 确保目录存在
+            if let Err(e) = std::fs::create_dir_all(&data_dir) {
+                eprintln!("Warning: Failed to create data directory: {}", e);
+            }
+            data_dir
+        }
     };
 
     // eprintln!("Using data directory: {:?}", data_dir);

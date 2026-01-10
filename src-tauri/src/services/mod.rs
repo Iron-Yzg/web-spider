@@ -27,18 +27,43 @@ pub struct AppState {
 
 impl AppState {
     pub fn new() -> Self {
-        // 使用应用数据目录，避免触发 Tauri 开发模式的重新构建
-        // macOS: ~/Library/Application Support/web-spider
-        let data_dir = if let Some(home_dir) = dirs::home_dir() {
-            home_dir.join("Library/Application Support/web-spider")
-        } else if let Some(data_dir) = dirs::data_dir() {
-            data_dir.join("web-spider")
-        } else {
-            PathBuf::from("./data")
-        };
+        let data_dir = get_app_data_dir();
         let _ = fs::create_dir_all(&data_dir);
 
         Self { data_dir }
+    }
+}
+
+/// 获取应用数据目录，支持 macOS 和 iOS
+fn get_app_data_dir() -> PathBuf {
+    #[cfg(target_os = "ios")]
+    {
+        // iOS: 使用 Documents 目录（沙盒内）
+        if let Some(documents) = dirs::document_dir() {
+            return documents.join("web-spider");
+        }
+        // 回退到应用可写目录
+        PathBuf::from("./Documents/web-spider")
+    }
+
+    #[cfg(not(target_os = "ios"))]
+    {
+        // macOS/Linux/Windows: 使用标准数据目录
+        if let Some(home_dir) = dirs::home_dir() {
+            // macOS: ~/Library/Application Support/web-spider
+            // Linux: ~/.local/share/web-spider
+            if home_dir.join("Library/Application Support").exists() {
+                return home_dir.join("Library/Application Support/web-spider");
+            }
+            if let Some(data_dir) = dirs::data_dir() {
+                return data_dir.join("web-spider");
+            }
+        }
+        if let Some(data_dir) = dirs::data_dir() {
+            data_dir.join("web-spider")
+        } else {
+            PathBuf::from("./data")
+        }
     }
 }
 
