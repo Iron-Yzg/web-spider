@@ -9,6 +9,7 @@ use std::ffi::OsStr;
 use std::pin::Pin;
 use std::time::Duration;
 use std::future::Future;
+use tokio::sync::mpsc;
 
 /// 视频列表项（包含ID和封面）
 #[derive(Debug, Clone, Deserialize)]
@@ -57,10 +58,10 @@ impl SrlSpider {
         }
     }
 
-    /// 使用headless_chrome提取视频列表（包含ID和封面）
-    async fn extract_video_list_with_chrome(&self, page_number: &str, log_callback: &impl Fn(String)) -> Vec<VideoListItem> {
+    /// 使用headless_chrome提取视频列表（包含ID和封面），返回日志和视频列表
+    async fn extract_video_list_with_chrome(&self, page_number: &str) -> (Vec<String>, Vec<VideoListItem>) {
         let page_url = self.build_url(&format!("/page/{}", page_number));
-        let _ = log_callback(format!("[Chrome] 访问列表页: {}", page_url));
+        let mut logs = vec![format!("[Chrome] 访问列表页: {}", page_url)];
 
         let browser_args: Vec<&OsStr> = vec![
             OsStr::new("--headless=new"),
@@ -86,28 +87,28 @@ impl SrlSpider {
         ) {
             Ok(browser) => browser,
             Err(e) => {
-                let _ = log_callback(format!("[Chrome] 启动浏览器失败: {}", e));
-                return Vec::new();
+                logs.push(format!("[Chrome] 启动浏览器失败: {}", e));
+                return (logs, Vec::new());
             }
         };
 
         let tab = match browser.new_tab() {
             Ok(tab) => tab,
             Err(e) => {
-                let _ = log_callback(format!("[Chrome] 创建标签页失败: {}", e));
-                return Vec::new();
+                logs.push(format!("[Chrome] 创建标签页失败: {}", e));
+                return (logs, Vec::new());
             }
         };
 
         // 导航到列表页
         if tab.navigate_to(&page_url).is_err() {
-            let _ = log_callback("[Chrome] 导航失败".to_string());
+            logs.push("[Chrome] 导航失败".to_string());
             let _ = tab.close(true);
-            return Vec::new();
+            return (logs, Vec::new());
         }
 
         // 等待页面加载和JavaScript执行
-        let _ = log_callback("[Chrome] 等待页面加载...".to_string());
+        logs.push("[Chrome] 等待页面加载...".to_string());
         tokio::time::sleep(Duration::from_secs(2)).await;
 
         // 提取视频列表
@@ -144,8 +145,6 @@ impl SrlSpider {
             Err(_) => "[]".to_string(),
         };
 
-        let _ = log_callback(format!("[Chrome] 提取到: {}", video_items_str));
-
         // 关闭浏览器
         let _ = tab.close(true);
 
@@ -155,7 +154,7 @@ impl SrlSpider {
             match parsed {
                 Ok(items) => items,
                 Err(e) => {
-                    let _ = log_callback(format!("[Chrome] 解析失败: {}", e));
+                    logs.push(format!("[Chrome] 解析失败: {}", e));
                     Vec::new()
                 }
             }
@@ -163,8 +162,8 @@ impl SrlSpider {
             Vec::new()
         };
 
-        let _ = log_callback(format!("[Chrome] 找到 {} 个视频", video_items.len()));
-        video_items
+        logs.push(format!("[Chrome] 找到 {} 个视频", video_items.len()));
+        (logs, video_items)
     }
 
     /// 使用reqwest从详情页提取m3u8
@@ -222,7 +221,10 @@ impl Scraper for SrlSpider {
 
         Box::pin(async move {
             // 1. 用headless_chrome提取视频列表（ID+封面）
-            let video_items = spider.extract_video_list_with_chrome(&page_number, &log_callback).await;
+            let (chrome_logs, video_items) = spider.extract_video_list_with_chrome(&page_number).await;
+            for log in chrome_logs {
+                log_callback(log);
+            }
 
             if video_items.is_empty() {
                 return ScrapeResult {
@@ -238,20 +240,29 @@ impl Scraper for SrlSpider {
             }
 
             // 2. 并发爬取每个视频的m3u8
-            let mut tasks = Vec::new();
+            let (result_tx, mut result_rx) = mpsc::channel::<(String, Option<String>)>(video_items.len());
+
             for item in &video_items {
                 let video_id = item.video_id.clone();
                 let spider = spider.clone();
-                let task = tokio::spawn(async move {
+                let result_tx = result_tx.clone();
+                let log_tx = log_callback.clone();
+
+                tokio::spawn(async move {
                     let m3u8_url = spider.fetch_m3u8_from_detail(&video_id).await;
-                    (video_id, m3u8_url)
+                    let _ = result_tx.send((video_id.clone(), m3u8_url.clone())).await;
+                    // 实时输出日志
+                    if m3u8_url.is_some() {
+                        log_tx(format!("✓ {}", video_id));
+                    } else {
+                        log_tx(format!("✗ {}", video_id));
+                    }
                 });
-                tasks.push(task);
             }
 
             let mut results: Vec<(String, Option<String>)> = Vec::new();
-            for task in tasks {
-                if let Ok((id, m3u8)) = task.await {
+            for _ in 0..video_items.len() {
+                if let Some((id, m3u8)) = result_rx.recv().await {
                     results.push((id, m3u8));
                 }
             }
@@ -272,9 +283,6 @@ impl Scraper for SrlSpider {
                         let title = spider.extract_title(&html);
 
                         let cover_url = item.cover.clone().filter(|c| c.starts_with("data:image"));
-                        if let Some(ref cover) = cover_url {
-                            let _ = log_callback(format!("  封面: {} chars", cover.len()));
-                        }
 
                         return ScrapeResult {
                             success: true,
@@ -317,10 +325,13 @@ impl Scraper for SrlSpider {
 
         Box::pin(async move {
             // 1. 用headless_chrome提取视频列表
-            let video_items = spider.extract_video_list_with_chrome(&page_number, &log_callback).await;
+            let (chrome_logs, video_items) = spider.extract_video_list_with_chrome(&page_number).await;
+            for log in chrome_logs {
+                log_callback(log);
+            }
 
             let total_count = video_items.len();
-            let _ = log_callback(format!("开始爬取 {} 个视频...", total_count));
+            log_callback(format!("开始爬取 {} 个视频...", total_count));
 
             if video_items.is_empty() {
                 return vec![ScrapeResult {
@@ -336,20 +347,24 @@ impl Scraper for SrlSpider {
             }
 
             // 2. 并发爬取m3u8
-            let mut tasks = Vec::new();
+            let (result_tx, mut result_rx) = mpsc::channel::<(String, Option<String>)>(video_items.len());
+
             for item in &video_items {
                 let video_id = item.video_id.clone();
                 let spider = spider.clone();
-                let task = tokio::spawn(async move {
+                let result_tx = result_tx.clone();
+                let log_tx = log_callback.clone();
+
+                tokio::spawn(async move {
                     let m3u8_url = spider.fetch_m3u8_from_detail(&video_id).await;
-                    (video_id, m3u8_url)
+                    let _ = result_tx.send((video_id.clone(), m3u8_url.clone())).await;
                 });
-                tasks.push(task);
             }
 
+            // 收集结果
             let mut m3u8_results: Vec<(String, Option<String>)> = Vec::new();
-            for task in tasks {
-                if let Ok((id, m3u8)) = task.await {
+            for _ in 0..video_items.len() {
+                if let Some((id, m3u8)) = result_rx.recv().await {
                     m3u8_results.push((id, m3u8));
                 }
             }
@@ -377,10 +392,6 @@ impl Scraper for SrlSpider {
                     };
                     let title = spider.extract_title(&html);
 
-                    if let Some(ref cover) = cover_url {
-                        let _ = log_callback(format!("  封面: {} chars", cover.len()));
-                    }
-
                     results.push(ScrapeResult {
                         success: true,
                         name: if title.is_empty() { format!("视频_{}", item.video_id) } else { title },
@@ -392,7 +403,6 @@ impl Scraper for SrlSpider {
                         cover_url,
                     });
                     success_count += 1;
-                    let _ = log_callback(format!("✓ {}", item.video_id));
                 } else {
                     results.push(ScrapeResult {
                         success: false,
@@ -404,14 +414,13 @@ impl Scraper for SrlSpider {
                         favorite_count: None,
                         cover_url: None,
                     });
-                    let _ = log_callback(format!("✗ {}", item.video_id));
                 }
 
                 // 短暂延迟
                 tokio::time::sleep(Duration::from_millis(200)).await;
             }
 
-            let _ = log_callback(format!("完成: 成功 {} / 总数 {}", success_count, total_count));
+            log_callback(format!("完成: 成功 {} / 总数 {}", success_count, total_count));
             results
         })
     }

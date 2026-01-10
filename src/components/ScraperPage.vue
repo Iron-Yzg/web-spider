@@ -272,9 +272,9 @@ async function scrape() {
       videoId.value = ''
 
       // 成功后自动关闭弹窗
-      setTimeout(() => {
-        logPopupVisible.value = false
-      }, 1500)
+      // setTimeout(() => {
+      //   logPopupVisible.value = false
+      // }, 1500)
     } else {
       if (logPopupRef.value) {
         logPopupRef.value.addLog(`爬取失败: ${result.message}`)
