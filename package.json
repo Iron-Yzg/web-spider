@@ -7,7 +7,20 @@
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "dev:desktop": "tauri dev",
+    "dev:mobile": "tauri dev --mobile",
+    "dev:ios": "tauri ios dev",
+    "dev:android": "tauri android dev",
+    "build:desktop": "tauri build",
+    "build:desktop:debug": "tauri build --debug",
+    "build:ios": "tauri ios build",
+    "build:android": "tauri android build",
+    "build:ios:release": "tauri ios build --release",
+    "build:android:release": "tauri android build --release",
+    "clean": "cargo clean && rm -rf node_modules/.vite",
+    "clean:all": "cargo clean && rm -rf node_modules && rm -rf src-tauri/target",
+    "lint": "vue-tsc --noEmit"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
