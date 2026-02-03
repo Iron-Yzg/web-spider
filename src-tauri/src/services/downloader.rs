@@ -1,4 +1,5 @@
 use crate::models::DownloadProgress;
+use crate::services::scraper::D1Spider;
 use reqwest;
 use std::fs;
 use std::path::PathBuf;
@@ -198,6 +199,43 @@ fn parse_encryption_info(m3u8_content: &str, m3u8_url: &str) -> EncryptionInfo {
     info
 }
 
+/// 使用 localStorage 中的 token 更新 URL
+/// 如果 URL 中的 token 与 localStorage 中的不同，则替换
+fn refresh_url_token(m3u8_url: &str, local_storage_token: Option<&String>) -> String {
+    // 如果没有配置 localStorage token，直接返回原 URL
+    let local_token = match local_storage_token {
+        Some(t) => t,
+        None => return m3u8_url.to_string(),
+    };
+
+    // 从 URL 中提取当前 token
+    let url_token = D1Spider::extract_url_token(m3u8_url);
+
+    // 如果 URL 中没有 token，直接附加 token
+    if url_token.is_none() {
+        if let Ok(parsed) = Url::parse(m3u8_url) {
+            let mut new_url = parsed.clone();
+            if let Some(query) = parsed.query() {
+                new_url.set_query(Some(&format!("{}&token={}", query, local_token)));
+            } else {
+                new_url.set_query(Some(&format!("token={}", local_token)));
+            }
+            return new_url.to_string();
+        }
+        return m3u8_url.to_string();
+    }
+
+    // 比对 token
+    let url_token = url_token.unwrap();
+    if url_token != *local_token {
+        // token 不同，需要替换
+        D1Spider::update_url_token(m3u8_url, local_token)
+    } else {
+        // token 相同，无需修改
+        m3u8_url.to_string()
+    }
+}
+
 /// 下载M3U8视频（支持AES-128加密）
 pub async fn download_m3u8(
     m3u8_url: &str,
@@ -205,6 +243,7 @@ pub async fn download_m3u8(
     video_id: &str,
     video_name: &str,
     mut progress_callback: impl FnMut(DownloadProgress),
+    local_storage_token: Option<&String>,
 ) -> Result<(), String> {
     // 检查ffmpeg
     if !check_ffmpeg() {
@@ -227,6 +266,9 @@ pub async fn download_m3u8(
     let key_path = temp_dir.join("decrypt.key");
     let _ = fs::create_dir_all(&temp_dir);
 
+    // 使用 localStorage 中的 token 更新 URL
+    let final_url = refresh_url_token(m3u8_url, local_storage_token);
+
     // eprintln!("[DOWNLOAD] temp_filename: {}", temp_filename);
     // eprintln!("[DOWNLOAD] final video_path: {:?}", video_path);
     // eprintln!("[DOWNLOAD] temp_dir: {:?}", temp_dir);
@@ -241,7 +283,7 @@ pub async fn download_m3u8(
     });
 
     let client = reqwest::Client::new();
-    let m3u8_content = if let Ok(response) = client.get(m3u8_url).send().await {
+    let m3u8_content = if let Ok(response) = client.get(&final_url).send().await {
         if response.status().is_success() {
             if let Ok(content) = response.text().await {
                 let _ = fs::write(&playlist_path, &content);
@@ -274,7 +316,7 @@ pub async fn download_m3u8(
     });
 
     // 检查加密状态
-    let encryption_info = parse_encryption_info(&m3u8_content, m3u8_url);
+    let encryption_info = parse_encryption_info(&m3u8_content, &final_url);
     // eprintln!("[DOWNLOAD] encrypted: {:?}", encryption_info.encrypted);
     // eprintln!("[DOWNLOAD] key_url: {:?}", encryption_info.key_url);
 
@@ -291,7 +333,7 @@ pub async fn download_m3u8(
 
         if let Some(key_url) = encryption_info.key_url {
             // 从m3u8_url提取token参数
-            let m3u8_parsed = Url::parse(m3u8_url).ok();
+            let m3u8_parsed = Url::parse(&final_url).ok();
             let query = m3u8_parsed.as_ref().and_then(|u| u.query()).unwrap_or("");
 
             // 构造带token的key请求URL
@@ -350,7 +392,7 @@ pub async fn download_m3u8(
     });
 
     if let Ok(content) = fs::read_to_string(&playlist_path) {
-        let base_url = m3u8_url.rsplit('/').nth(1).map(|s| format!("{}/", s)).unwrap_or_default();
+        let base_url = final_url.rsplit('/').nth(1).map(|s| format!("{}/", s)).unwrap_or_default();
         let modified: String = content
             .lines()
             .map(|line| {
@@ -509,10 +551,12 @@ pub async fn batch_download_concurrent(
     videos: Vec<(String, String, String, PathBuf)>,
     max_concurrent: usize,
     progress_sender: broadcast::Sender<DownloadProgress>,
+    local_storage_token: Option<&String>,
 ) -> Vec<(String, Result<(), String>)> {
     // 使用 tokio::stream 并发执行下载
     let results = stream::iter(videos.into_iter().map(|(id, name, m3u8_url, output_dir)| {
         let sender = progress_sender.clone();
+        let token = local_storage_token.cloned();
         async move {
             let video_id = id.clone();
             let name_clone = name.clone();
@@ -536,7 +580,7 @@ pub async fn batch_download_concurrent(
             };
 
             // 执行下载
-            let result = download_m3u8(&m3u8_url, &output_dir.to_string_lossy(), &video_id, &name, progress_callback).await;
+            let result = download_m3u8(&m3u8_url, &output_dir.to_string_lossy(), &video_id, &name, progress_callback, token.as_ref()).await;
 
             // 标记下载完成
             finish_download(&video_id);

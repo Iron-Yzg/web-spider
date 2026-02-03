@@ -6,6 +6,7 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::future::Future;
+use url::Url;
 
 /// D1 Cloudfront 爬虫 - 专门爬取 d1ibyof3mbdf0n.cloudfront.net
 #[derive(Clone)]
@@ -19,6 +20,68 @@ impl D1Spider {
         Self {
             base_url: website.base_url.clone(),
             local_storage: website.local_storage.clone(),
+        }
+    }
+
+    #[allow(dead_code)]
+    /// 从 localStorage 中获取 token 值
+    pub fn get_token_from_local_storage(&self) -> Option<String> {
+        self.local_storage
+            .iter()
+            .find(|item| item.key == "token")
+            .map(|item| item.value.clone())
+    }
+
+    #[allow(dead_code)]
+    /// 从 URL 中提取 token 参数
+    pub fn extract_url_token(url: &str) -> Option<String> {
+        if let Ok(parsed) = Url::parse(url) {
+            if let Some(query) = parsed.query() {
+                for param in query.split('&') {
+                    if param.starts_with("token=") {
+                        return Some(param[6..].to_string());
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    #[allow(dead_code)]
+    /// 更新 URL 中的 token
+    /// 如果 URL 中的 token 与新 token 不同，则替换
+    pub fn update_url_token(url: &str, new_token: &str) -> String {
+        if let Ok(parsed) = Url::parse(url) {
+            if let Some(query) = parsed.query() {
+                // 检查 URL 中是否已有 token 参数
+                let params: Vec<&str> = query.split('&').collect();
+                let mut has_token = false;
+                let mut new_params: Vec<String> = Vec::new();
+
+                for param in params {
+                    if param.starts_with("token=") {
+                        has_token = true;
+                        new_params.push(format!("token={}", new_token));
+                    } else {
+                        new_params.push(param.to_string());
+                    }
+                }
+
+                if has_token {
+                    // 重建 URL
+                    let mut new_url = parsed;
+                    new_url.set_query(Some(&new_params.join("&")));
+                    new_url.to_string()
+                } else {
+                    // 没有 token 参数，直接返回原 URL
+                    url.to_string()
+                }
+            } else {
+                // 没有查询参数，返回原 URL
+                url.to_string()
+            }
+        } else {
+            url.to_string()
         }
     }
 }

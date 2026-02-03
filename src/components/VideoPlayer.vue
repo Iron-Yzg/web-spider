@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch, nextTick, onBeforeUnmount } from 'vue'
+import { invoke } from '@tauri-apps/api/core'
 import Artplayer from 'artplayer'
 import Hls from 'hls.js'
 
@@ -20,11 +21,13 @@ interface Props {
   title: string
   playlist?: VideoItem[]
   currentIndex?: number
+  videoId?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
   playlist: () => [],
-  currentIndex: 0
+  currentIndex: 0,
+  videoId: ''
 })
 
 const emit = defineEmits<{
@@ -92,18 +95,71 @@ function initPlayerPosition() {
   playerPosition.value = getCenteredPosition(size.width, size.height)
 }
 
+// 从 URL 中提取 token 参数
+function extractUrlToken(url: string): string | null {
+  try {
+    const urlObj = new URL(url)
+    const token = urlObj.searchParams.get('token')
+    return token
+  } catch {
+    return null
+  }
+}
+
+// 使用 localStorage 中的 token 更新 URL
+function updateUrlToken(url: string, localStorageToken: string): string {
+  const urlToken = extractUrlToken(url)
+  const urlObj = new URL(url)
+
+  if (urlToken !== localStorageToken) {
+    urlObj.searchParams.set('token', localStorageToken)
+    console.log('[VideoPlayer] Token 已更新')
+  } else {
+    console.log('[VideoPlayer] Token 无需更新')
+  }
+
+  return urlObj.toString()
+}
+
+// 获取网站配置中的 localStorage token
+async function getLocalStorageToken(): Promise<string | null> {
+  try {
+    const websites = await invoke<any[]>('get_websites')
+    if (!websites || websites.length === 0) return null
+
+    const defaultWebsite = websites.find((w: any) => w.is_default) || websites[0]
+    if (!defaultWebsite?.local_storage) return null
+
+    // 直接查找 key = "token" 的项
+    const tokenItem = defaultWebsite.local_storage.find((item: any) => item.key === 'token')
+
+    return tokenItem?.value || null
+  } catch (e) {
+    console.error('[VideoPlayer] 获取 localStorage token 失败:', e)
+    return null
+  }
+}
+
 // 创建 ArtPlayer 实例
-function createPlayer() {
+async function createPlayer() {
   if (!containerRef.value || !props.src) return
 
   // 销毁旧的播放器
   destroyPlayer()
 
-  const isM3U8 = props.src.endsWith('.m3u8') || props.src.includes('.m3u8')
+  // 获取 localStorage 中的 token 并更新 URL
+  const localStorageToken = await getLocalStorageToken()
+  let currentUrl = props.src
+
+  if (localStorageToken) {
+    currentUrl = updateUrlToken(props.src, localStorageToken)
+  }
+
+  const isM3U8 = currentUrl.endsWith('.m3u8') || currentUrl.includes('.m3u8')
 
   const art = new Artplayer({
     container: containerRef.value,
-    url: props.src,
+    url: currentUrl,
     autoplay: true,
     muted: false,
     volume: 0.5,
@@ -142,7 +198,7 @@ function createPlayer() {
     })
     hlsRef.value = hls
 
-    hls.loadSource(props.src)
+    hls.loadSource(currentUrl)
     hls.attachMedia(art.video)
 
     hls.on(Hls.Events.MANIFEST_PARSED, () => {
@@ -273,7 +329,7 @@ watch(() => props.visible, async (visible) => {
     updateHasNextVideo()
     await nextTick()
     await new Promise(resolve => setTimeout(resolve, 50))
-    createPlayer()
+    await createPlayer()
   } else {
     destroyPlayer()
   }
@@ -287,7 +343,7 @@ watch(() => props.src, async (newSrc) => {
   if (props.visible && newSrc) {
     await nextTick()
     await new Promise(resolve => setTimeout(resolve, 50))
-    createPlayer()
+    await createPlayer()
   }
 })
 </script>

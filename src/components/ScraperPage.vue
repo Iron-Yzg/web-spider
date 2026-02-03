@@ -73,6 +73,7 @@ const isLoadingMore = ref(false)
 const playerVisible = ref(false)
 const playerSrc = ref('')
 const playerTitle = ref('')
+const playerVideoId = ref('')
 const playerPlaylist = ref<VideoItem[]>([])
 const currentVideoIndex = ref(0)
 
@@ -494,6 +495,7 @@ function isDownloading(video: VideoItem): boolean {
 function openPlayer(video: VideoItem) {
   playerSrc.value = video.m3u8_url
   playerTitle.value = video.name
+  playerVideoId.value = video.id
   // 设置播放列表和当前索引
   playerPlaylist.value = videos.value
   currentVideoIndex.value = videos.value.findIndex(v => v.id === video.id)
@@ -506,6 +508,7 @@ async function handlePlayNext(nextIndex: number) {
     const nextVideo = playerPlaylist.value[nextIndex]
     playerSrc.value = nextVideo.m3u8_url
     playerTitle.value = nextVideo.name
+    playerVideoId.value = nextVideo.id
     currentVideoIndex.value = nextIndex
   }
 }
@@ -536,6 +539,7 @@ async function handleDeleteCurrent() {
       const nextVideo = playerPlaylist.value[nextIndex]
       playerSrc.value = nextVideo.m3u8_url
       playerTitle.value = nextVideo.name
+      playerVideoId.value = nextVideo.id
       currentVideoIndex.value = nextIndex
     } else {
       // 没有视频了，关闭播放器
@@ -868,6 +872,7 @@ function handleImageError(event: Event) {
       :title="playerTitle"
       :playlist="playerPlaylist"
       :current-index="currentVideoIndex"
+      :video-id="playerVideoId"
       @close="handlePlayerClose"
       @play-next="handlePlayNext"
       @delete-current="handleDeleteCurrent"

@@ -233,6 +233,17 @@ pub async fn download_video(
     let config = db.get_config().await.map_err(|e| e.to_string())?;
     let download_path = config.download_path;
 
+    // 获取默认网站配置中的 localStorage token
+    let website_opt = db.get_default_website().await.map_err(|e| e.to_string())?;
+    let local_storage_token = website_opt
+        .as_ref()
+        .and_then(|w| {
+            w.local_storage
+                .iter()
+                .find(|item| item.key == "token")
+                .map(|item| &item.value)
+        });
+
     let video = {
         let videos = db.get_all_videos().await.map_err(|e| e.to_string())?;
         let video = videos
@@ -271,6 +282,7 @@ pub async fn download_video(
         &video.id,
         &video.name,
         progress_callback,
+        local_storage_token,
     )
     .await;
 
@@ -317,6 +329,17 @@ pub async fn batch_download(
     let config = db.get_config().await.map_err(|e| e.to_string())?;
     let download_path = config.download_path;
 
+    // 获取默认网站配置中的 localStorage token
+    let website_opt = db.get_default_website().await.map_err(|e| e.to_string())?;
+    let local_storage_token = website_opt
+        .as_ref()
+        .and_then(|w| {
+            w.local_storage
+                .iter()
+                .find(|item| item.key == "token")
+                .map(|item| &item.value)
+        });
+
     let videos = db.get_all_videos().await.map_err(|e| e.to_string())?;
 
     let videos_to_download: Vec<(String, String, String, std::path::PathBuf)> = video_ids
@@ -359,7 +382,7 @@ pub async fn batch_download(
         }
     });
 
-    let results = batch_download_concurrent(videos_to_download, 3, progress_tx).await;
+    let results = batch_download_concurrent(videos_to_download, 3, progress_tx, local_storage_token).await;
 
     for (name, result) in results.iter() {
         if result.is_ok() {
