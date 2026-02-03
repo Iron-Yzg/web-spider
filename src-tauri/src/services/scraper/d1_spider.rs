@@ -79,7 +79,7 @@ impl Scraper for D1Spider {
             let browser = match Browser::new(
                 headless_chrome::LaunchOptions {
                     args: browser_args,
-                    headless: true,
+                    headless: false,
                     ..Default::default()
                 }
             ) {
