@@ -64,9 +64,7 @@ pub async fn search_videos(
 // ===== 桌面端爬虫相关命令 =====
 
 #[cfg(feature = "desktop")]
-use crate::services::download_m3u8;
-#[cfg(feature = "desktop")]
-use crate::services::{batch_download_concurrent, is_downloading, Scraper, ScraperFactory, ScraperInfo, get_available_scrapers};
+use crate::services::{batch_download_concurrent, Scraper, ScraperFactory, ScraperInfo, get_available_scrapers};
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
@@ -223,6 +221,11 @@ pub async fn scrape_video(
     }
 }
 
+#[tauri::command]
+pub async fn delete_video(db: State<'_, Database>, video_id: String) -> Result<(), String> {
+    db.delete_video(&video_id).await.map_err(|e| e.to_string())
+}
+
 #[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn download_video(
@@ -230,81 +233,8 @@ pub async fn download_video(
     db: State<'_, Database>,
     video_id: String,
 ) -> Result<(), String> {
-    let config = db.get_config().await.map_err(|e| e.to_string())?;
-    let download_path = config.download_path;
-
-    // 获取默认网站配置中的 localStorage token
-    let website_opt = db.get_default_website().await.map_err(|e| e.to_string())?;
-    let local_storage_token = website_opt
-        .as_ref()
-        .and_then(|w| {
-            w.local_storage
-                .iter()
-                .find(|item| item.key == "token")
-                .map(|item| &item.value)
-        });
-
-    let video = {
-        let videos = db.get_all_videos().await.map_err(|e| e.to_string())?;
-        let video = videos
-            .iter()
-            .find(|v| v.id == video_id)
-            .ok_or("视频不存在")?
-            .clone();
-
-        db.update_video_status(&video_id, VideoStatus::Downloading, None)
-            .await
-            .map_err(|e| e.to_string())?;
-
-        video
-    };
-
-    let videos = db.get_all_videos().await.map_err(|e| e.to_string())?;
-    let _ = window.emit("videos-updated", videos);
-
-    let (progress_tx, _) = broadcast::channel::<DownloadProgress>(100);
-
-    let window_clone = window.clone();
-    let mut progress_rx = progress_tx.subscribe();
-    task::spawn(async move {
-        while let Ok(progress) = progress_rx.recv().await {
-            let _ = window_clone.emit("event", progress);
-        }
-    });
-
-    let progress_callback = move |p: DownloadProgress| {
-        let _ = progress_tx.send(p);
-    };
-
-    let result = download_m3u8(
-        &video.m3u8_url,
-        &download_path,
-        &video.id,
-        &video.name,
-        progress_callback,
-        local_storage_token,
-    )
-    .await;
-
-    if result.is_ok() {
-        db.update_video_status(&video_id, VideoStatus::Downloaded, Some(Utc::now()))
-            .await
-            .map_err(|e| e.to_string())?;
-    } else {
-        db.update_video_status(&video_id, VideoStatus::Scraped, None)
-            .await
-            .map_err(|e| e.to_string())?;
-    }
-
-    let videos = db.get_all_videos().await.map_err(|e| e.to_string())?;
-    let _ = window.emit("videos-updated", videos);
-
-    result
-}
-
-#[tauri::command]
-pub async fn delete_video(db: State<'_, Database>, video_id: String) -> Result<(), String> {
-    db.delete_video(&video_id).await.map_err(|e| e.to_string())
+    // 复用 batch_download 的逻辑
+    batch_download(window, db, vec![video_id]).await
 }
 
 #[cfg(feature = "desktop")]
@@ -329,45 +259,70 @@ pub async fn batch_download(
     let config = db.get_config().await.map_err(|e| e.to_string())?;
     let download_path = config.download_path;
 
-    // 获取默认网站配置中的 localStorage token
-    let website_opt = db.get_default_website().await.map_err(|e| e.to_string())?;
-    let local_storage_token = website_opt
-        .as_ref()
-        .and_then(|w| {
-            w.local_storage
-                .iter()
-                .find(|item| item.key == "token")
-                .map(|item| &item.value)
-        });
+    // 直接根据 video_ids 获取视频
+    let videos = db.get_videos_by_ids(&video_ids).await.map_err(|e| e.to_string())?;
 
-    let videos = db.get_all_videos().await.map_err(|e| e.to_string())?;
-
-    let videos_to_download: Vec<(String, String, String, std::path::PathBuf)> = video_ids
-        .into_iter()
-        .filter_map(|id| {
-            if is_downloading(&id) {
-                return None;
-            }
-            videos.iter().find(|v| v.id == id).map(|video| {
-                (
-                    video.id.clone(),
-                    video.name.clone(),
-                    video.m3u8_url.clone(),
-                    std::path::PathBuf::from(&download_path),
-                )
-            })
-        })
-        .collect();
-
-    if videos_to_download.is_empty() {
+    if videos.is_empty() {
         return Err("没有可下载的视频".to_string());
     }
 
-    for id in videos_to_download.iter().map(|(id, _, _, _)| id) {
-        db.update_video_status(id, VideoStatus::Downloading, None)
-            .await
-            .map_err(|e| e.to_string())?;
+    // 先批量更新所有视频状态为 downloading
+    for video in &videos {
+        if let Err(e) = db.update_video_status(&video.id, VideoStatus::Downloading, None).await {
+            tracing::error!("[DOWNLOAD] 设置下载中状态失败: {} - {}", video.id, e);
+        }
     }
+
+    // 假设批量下载都来自同一个网站，取第一个视频的 website_name 获取 token
+    let website_name = &videos[0].website_name;
+    let website_opt = db.get_website_by_name(website_name).await.map_err(|e| e.to_string())?;
+
+    // 获取 token
+    let mut token = None;
+    if let Some(website) = website_opt {
+        for item in &website.local_storage {
+            if item.key == "token" {
+                token = Some(item.value.clone());
+                break;
+            }
+        }
+    }
+
+    // 准备下载列表（使用已更新 token 的 URL）
+    let videos_to_download: Vec<(String, String, String, std::path::PathBuf)> = videos
+        .into_iter()
+        .map(|video| {
+            // 更新 URL 中的 token
+            let final_url = if let Some(ref t) = token {
+                if let Ok(parsed) = url::Url::parse(&video.m3u8_url) {
+                    if let Some(query) = parsed.query() {
+                        let new_query: String = query
+                            .split('&')
+                            .map(|p| {
+                                if p.starts_with("token=") {
+                                    format!("token={}", t)
+                                } else {
+                                    p.to_string()
+                                }
+                            })
+                            .collect::<Vec<_>>()
+                            .join("&");
+                        let mut new_url = parsed;
+                        new_url.set_query(Some(&new_query));
+                        new_url.to_string()
+                    } else {
+                        video.m3u8_url.clone()
+                    }
+                } else {
+                    video.m3u8_url.clone()
+                }
+            } else {
+                video.m3u8_url.clone()
+            };
+
+            (video.id.clone(), video.name, final_url, std::path::PathBuf::from(&download_path))
+        })
+        .collect();
 
     let videos = db.get_all_videos().await.map_err(|e| e.to_string())?;
     let _ = window.emit("videos-updated", videos);
@@ -382,17 +337,17 @@ pub async fn batch_download(
         }
     });
 
-    let results = batch_download_concurrent(videos_to_download, 3, progress_tx, local_storage_token).await;
+    let results = batch_download_concurrent(videos_to_download, 3, progress_tx).await;
 
-    for (name, result) in results.iter() {
+    for (id, result) in results.iter() {
         if result.is_ok() {
-            db.update_video_status_by_name(name, VideoStatus::Downloaded, Some(Utc::now()))
-                .await
-                .map_err(|e| e.to_string())?;
+            if let Err(e) = db.update_video_status(id, VideoStatus::Downloaded, Some(Utc::now())).await {
+                tracing::error!("[DOWNLOAD] 更新下载状态失败: {} - {}", id, e);
+            }
         } else {
-            db.update_video_status_by_name(name, VideoStatus::Scraped, None)
-                .await
-                .map_err(|e| e.to_string())?;
+            if let Err(e) = db.update_video_status(id, VideoStatus::Scraped, None).await {
+                tracing::error!("[DOWNLOAD] 更新失败状态失败: {} - {}", id, e);
+            }
         }
     }
 

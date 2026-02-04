@@ -194,7 +194,7 @@ impl Scraper for D1Spider {
                         if captured.is_none() {
                             *captured = Some(url.clone());
                             let msg = format!("捕获到m3u8: {}", url);
-                            // eprintln!("[SCRAPER] {}", msg);
+                            // tracing::info!("[SCRAPER] {}", msg);
                             log_callback_for_response(msg);
                         }
                     }
@@ -343,19 +343,19 @@ impl Scraper for D1Spider {
 
                 let _ = log_callback("正在提取播放和收藏数...".to_string());
                 if let Ok(result) = tab.evaluate(count_js, false) {
-                    // eprintln!("[DEBUG] count_js result: {:?}", result);
+                    // tracing::info!("[DEBUG] count_js result: {:?}", result);
                     if let Some(value) = result.value.as_ref().and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
                         let parts: Vec<&str> = value.split('|').collect();
-                        // eprintln!("[DEBUG] count_js value: {:?}", value);
+                        // tracing::info!("[DEBUG] count_js value: {:?}", value);
                         if parts.len() >= 1 && !parts[0].is_empty() {
                             view_count = parse_count(parts[0]);
                             let _ = log_callback(format!("播放数: {}", parts[0]));
-                            // eprintln!("[DEBUG] play_count: {:?} = {:?}", parts[0], view_count);
+                            // tracing::info!("[DEBUG] play_count: {:?} = {:?}", parts[0], view_count);
                         }
                         if parts.len() >= 2 && !parts[1].is_empty() {
                             favorite_count = parse_count(parts[1]);
                             let _ = log_callback(format!("收藏数: {}", parts[1]));
-                            // eprintln!("[DEBUG] favorite_count: {:?} = {:?}", parts[1], favorite_count);
+                            // tracing::info!("[DEBUG] favorite_count: {:?} = {:?}", parts[1], favorite_count);
                         }
                     } else if let Some(ref value) = result.value {
                         let _ = log_callback(format!("[DEBUG] count_js result: {:?}", value));

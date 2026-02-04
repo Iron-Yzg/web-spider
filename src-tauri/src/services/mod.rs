@@ -14,9 +14,7 @@ pub use scraper::{
 };
 
 pub use downloader::{
-    download_m3u8,
     check_ffmpeg,
-    is_downloading,
     batch_download_concurrent,
 };
 

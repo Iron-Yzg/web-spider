@@ -15,8 +15,20 @@ pub use db::{Database, PaginatedVideos};
 #[cfg(feature = "desktop")]
 pub use services::{AppState, AppState as AppStateTrait};
 
+// 初始化 tracing 用于日志输出
+fn init_tracing() {
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .with_thread_ids(true)
+        .with_target(false)
+        .init();
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // 初始化 tracing
+    init_tracing();
+    tracing::info!("[App] 应用启动");
     // 桌面端才需要 AppState（用于爬虫和下载状态管理）
     #[cfg(feature = "desktop")]
     let app_state = services::AppState::new();
@@ -34,7 +46,7 @@ pub fn run() {
             };
             // 确保目录存在
             if let Err(e) = std::fs::create_dir_all(&data_dir) {
-                eprintln!("Warning: Failed to create data directory: {}", e);
+                tracing::info!("Warning: Failed to create data directory: {}", e);
             }
             data_dir
         }
@@ -57,13 +69,13 @@ pub fn run() {
             };
             // 确保目录存在
             if let Err(e) = std::fs::create_dir_all(&data_dir) {
-                eprintln!("Warning: Failed to create data directory: {}", e);
+                tracing::info!("Warning: Failed to create data directory: {}", e);
             }
             data_dir
         }
     };
 
-    // eprintln!("Using data directory: {:?}", data_dir);
+    // tracing::info!("Using data directory: {:?}", data_dir);
 
     let database = runtime.block_on(async {
         db::Database::new(&data_dir).await.expect("Failed to initialize database")

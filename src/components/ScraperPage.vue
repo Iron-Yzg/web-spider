@@ -106,11 +106,36 @@ onMounted(async () => {
     loadWebsites()
   ])
 
-  unlistenVideos = await listen<VideoItem[]>('videos-updated', async () => {
-    // 重新加载第一页
-    currentPage.value = 1
-    videos.value = []
-    await loadVideos()
+  unlistenVideos = await listen<VideoItem[]>('videos-updated', (event) => {
+    const newVideos = event.payload
+    // 保留正在下载的视频的进度状态
+    const currentDownloadingIds = Object.keys(downloadProgress.value)
+
+    // 创建新数组，保留正在下载视频的本地状态
+    const updatedVideos = newVideos.map(newVideo => {
+      // 如果这个视频正在下载，检查本地状态
+      if (currentDownloadingIds.includes(newVideo.id)) {
+        const existingVideo = videos.value.find(v => v.id === newVideo.id)
+        if (existingVideo) {
+          // 保留本地状态（status），只更新其他字段
+          return { ...newVideo, status: existingVideo.status }
+        }
+      }
+      return newVideo
+    })
+
+    // 移除已完成下载的视频的进度信息
+    for (const videoId of currentDownloadingIds) {
+      const video = updatedVideos.find(v => v.id === videoId)
+      if (video && (video.status === VideoStatus.Downloaded || video.status === VideoStatus.Scraped)) {
+        // 下载已完成或失败，移除进度信息
+        delete downloadProgress.value[videoId]
+      }
+    }
+
+    // 更新视频列表
+    videos.value = updatedVideos
+    filterVideos()
   })
 
   unlistenProgress = await listen<DownloadProgress>('event', (event) => {
@@ -118,15 +143,22 @@ onMounted(async () => {
     downloadProgress.value[progress.video_id] = progress
 
     // 根据进度状态更新视频列表中的状态
-    const video = videos.value.find(v => v.id === progress.video_id)
-    if (video) {
+    // 找到视频索引直接更新，触发Vue响应式更新
+    const index = videos.value.findIndex(v => v.id === progress.video_id)
+    if (index !== -1) {
       if (progress.status === '下载完成' || progress.progress >= 100) {
-        video.status = VideoStatus.Downloaded
+        videos.value[index].status = VideoStatus.Downloaded
+        // 下载完成，移除进度信息
+        delete downloadProgress.value[progress.video_id]
       } else if (progress.status.startsWith('下载失败')) {
-        video.status = VideoStatus.Scraped
+        videos.value[index].status = VideoStatus.Scraped
+        // 下载失败，移除进度信息
+        delete downloadProgress.value[progress.video_id]
       } else if (progress.progress > 0) {
-        video.status = VideoStatus.Downloading
+        videos.value[index].status = VideoStatus.Downloading
       }
+      // 触发筛选器重新应用（如果需要）
+      filterVideos()
     }
   })
 
@@ -332,10 +364,10 @@ function handleLogPopupClose() {
 }
 
 async function downloadVideo(video: VideoItem) {
-
   try {
     await invoke('download_video', { videoId: video.id })
-    await loadVideos()
+    // 不要在这里调用 loadVideos()，否则会清除进度状态
+    // 状态更新由 progress 事件和 videos-updated 事件处理
   } catch (e) {
     alert('下载失败: ' + e)
   }
@@ -351,7 +383,8 @@ async function batchDownload() {
   try {
     await invoke('batch_download', { videoIds: ids })
     selectedIds.value.clear()
-    await loadVideos()
+    // 不要在这里调用 loadVideos()，否则会清除进度状态
+    // 状态更新由 progress 事件和 videos-updated 事件处理
   } catch (e) {
     alert('批量下载失败: ' + e)
   }

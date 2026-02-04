@@ -52,7 +52,7 @@ fn extract_videos_from_html(html: &str) -> Vec<VideoInfo> {
     // 从 tags-box 区域提取收藏数
     let fav_in_tags_pattern = Regex::new(r#"收藏数\s*(\d+)"#).unwrap();
 
-    eprintln!("[DEBUG] Starting extraction...");
+    tracing::info!("[DEBUG] Starting extraction...");
 
     // 使用卡片边界来提取，避免重复
     for card_cap in card_pattern.captures_iter(&clean_html) {
@@ -134,7 +134,7 @@ fn extract_videos_from_html(html: &str) -> Vec<VideoInfo> {
         name.hash(&mut hasher);
         let video_id = format!("{:x}", hasher.finish());
 
-        eprintln!("[DEBUG] Extracted: name='{}', views='{}', duration='{}', fav={}, cover='{}'",
+        tracing::info!("[DEBUG] Extracted: name='{}', views='{}', duration='{}', fav={}, cover='{}'",
             name, views, duration, favorite_count,
             if cover_url.is_empty() { "(empty)" } else { &cover_url[..cover_url.len().min(50)] });
 
@@ -152,7 +152,7 @@ fn extract_videos_from_html(html: &str) -> Vec<VideoInfo> {
 
     // 如果主模式没有找到，尝试更宽松的提取方式
     if videos.is_empty() {
-        eprintln!("[DEBUG] Main pattern found nothing, trying fallback...");
+        tracing::info!("[DEBUG] Main pattern found nothing, trying fallback...");
 
         // 匹配 longVideoCard 块及其后的标题
         let alt_card_pattern = Regex::new(
@@ -232,7 +232,7 @@ fn extract_videos_from_html(html: &str) -> Vec<VideoInfo> {
             name.hash(&mut hasher);
             let video_id = format!("{:x}", hasher.finish());
 
-            eprintln!("[DEBUG] Alt extracted: name='{}', views='{}', duration='{}', fav={}, cover='{}'",
+            tracing::info!("[DEBUG] Alt extracted: name='{}', views='{}', duration='{}', fav={}, cover='{}'",
                 name, views, duration, favorite_count,
                 if cover_url.is_empty() { "(empty)" } else { &cover_url[..cover_url.len().min(50)] });
 
@@ -260,7 +260,7 @@ fn extract_videos_from_html(html: &str) -> Vec<VideoInfo> {
         }
     }
 
-    eprintln!("[DEBUG] Total videos extracted: {} (after dedup)", final_videos.len());
+    tracing::info!("[DEBUG] Total videos extracted: {} (after dedup)", final_videos.len());
     final_videos
 }
 
@@ -555,8 +555,8 @@ impl Scraper for D2Spider {
             };
 
             // 调试输出：检查HTML内容
-            eprintln!("[DEBUG] HTML length: {} bytes", html.len());
-            eprintln!("[DEBUG] HTML preview (first 2000 chars):\n{}", &html);
+            tracing::info!("[DEBUG] HTML length: {} bytes", html.len());
+            tracing::info!("[DEBUG] HTML preview (first 2000 chars):\n{}", &html);
 
             // 检查是否有 card-item 或 longVideoCard 类
             let has_card_item = html.contains("card-item");
@@ -565,11 +565,11 @@ impl Scraper for D2Spider {
             let has_video_time = html.contains("video-time");
             let has_wh_full = html.contains("wh-full");
 
-            eprintln!("[DEBUG] Contains 'card-item': {}", has_card_item);
-            eprintln!("[DEBUG] Contains 'longVideoCard': {}", has_long_video_card);
-            eprintln!("[DEBUG] Contains 'collectPack': {}", has_collect_pack);
-            eprintln!("[DEBUG] Contains 'video-time': {}", has_video_time);
-            eprintln!("[DEBUG] Contains 'wh-full': {}", has_wh_full);
+            tracing::info!("[DEBUG] Contains 'card-item': {}", has_card_item);
+            tracing::info!("[DEBUG] Contains 'longVideoCard': {}", has_long_video_card);
+            tracing::info!("[DEBUG] Contains 'collectPack': {}", has_collect_pack);
+            tracing::info!("[DEBUG] Contains 'video-time': {}", has_video_time);
+            tracing::info!("[DEBUG] Contains 'wh-full': {}", has_wh_full);
 
             // 提取视频列表（使用独立函数）
             let videos = extract_videos_from_html(&html);
@@ -878,7 +878,7 @@ impl Scraper for D2Spider {
             drop(tab);
             drop(browser);
 
-            eprintln!("[DEBUG] Total videos collected: {}", all_videos.len());
+            tracing::info!("[DEBUG] Total videos collected: {}", all_videos.len());
 
             if all_videos.is_empty() {
                 return vec![ScrapeResult {

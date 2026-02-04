@@ -1140,13 +1140,13 @@ let handle1 = std::thread::spawn(move || {
 
 ## 6. 调试技巧
 
-### 6.1 使用 eprintln! 输出调试信息
+### 6.1 使用 tracing::info! 输出调试信息
 
 ```rust
 // 在 Rust 代码中添加调试输出
-eprintln!("[DEBUG] video_id: {}", video_id);
-eprintln!("[DEBUG] m3u8_url: {}", m3u8_url);
-eprintln!("[DEBUG] progress: {}%", progress);
+tracing::info!("[DEBUG] video_id: {}", video_id);
+tracing::info!("[DEBUG] m3u8_url: {}", m3u8_url);
+tracing::info!("[DEBUG] progress: {}%", progress);
 ```
 
 ### 6.2 打开 Tauri 日志

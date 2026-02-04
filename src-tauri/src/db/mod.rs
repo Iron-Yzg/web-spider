@@ -64,12 +64,10 @@ impl Database {
     /// 创建新的数据库实例
     pub async fn new(data_dir: &PathBuf) -> Result<Self, sqlx::Error> {
         let db_path = data_dir.join("web-spider.db");
-        // eprintln!("DB: Connecting to database: {:?}", db_path);
 
         // 确保目录存在
         if let Some(parent) = db_path.parent() {
             if !parent.exists() {
-                eprintln!("DB: Creating directory: {:?}", parent);
                 std::fs::create_dir_all(parent)?;
             }
         }
@@ -144,6 +142,33 @@ impl Database {
         let rows = sqlx::query("SELECT id, name, m3u8_url, status, created_at, downloaded_at, scrape_id, website_name, cover_url, favorite_count, view_count FROM videos ORDER BY created_at DESC")
             .fetch_all(&self.pool)
             .await?;
+
+        let mut videos = Vec::new();
+        for row in rows {
+            videos.push(row_to_video_item(&row)?);
+        }
+        Ok(videos)
+    }
+
+    /// 根据视频ID列表获取视频
+    pub async fn get_videos_by_ids(&self, ids: &[String]) -> Result<Vec<VideoItem>, sqlx::Error> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // 构建占位符: ?,?,?
+        let placeholders: Vec<String> = ids.iter().map(|_| "?".to_string()).collect();
+        let sql = format!(
+            "SELECT id, name, m3u8_url, status, created_at, downloaded_at, scrape_id, website_name, cover_url, favorite_count, view_count FROM videos WHERE id IN ({}) ORDER BY created_at DESC",
+            placeholders.join(",")
+        );
+
+        let mut query = sqlx::query(&sql);
+        for id in ids {
+            query = query.bind(id);
+        }
+
+        let rows = query.fetch_all(&self.pool).await?;
 
         let mut videos = Vec::new();
         for row in rows {
@@ -511,6 +536,33 @@ impl Database {
                 base_url: row.try_get("base_url")?,
                 local_storage,
                 is_default: true,
+                spider,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// 根据网站名称获取网站配置
+    pub async fn get_website_by_name(&self, name: &str) -> Result<Option<Website>, sqlx::Error> {
+        let row = sqlx::query("SELECT id, name, base_url, local_storage, is_default, spider FROM websites WHERE name = ? LIMIT 1")
+            .bind(name)
+            .fetch_optional(&self.pool)
+            .await?;
+
+        if let Some(row) = row {
+            let local_storage_json: String = row.try_get("local_storage")?;
+            let local_storage: Vec<LocalStorageItem> = serde_json::from_str(&local_storage_json)
+                .unwrap_or_default();
+            let is_default: i32 = row.try_get("is_default")?;
+            let spider: String = row.try_get("spider")?;
+
+            Ok(Some(Website {
+                id: row.try_get("id")?,
+                name: row.try_get("name")?,
+                base_url: row.try_get("base_url")?,
+                local_storage,
+                is_default: is_default == 1,
                 spider,
             }))
         } else {
