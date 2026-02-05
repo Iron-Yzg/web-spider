@@ -1,11 +1,11 @@
+use std::path::PathBuf;
 use sqlx::sqlite::{SqlitePool, SqliteRow, SqliteConnectOptions};
 use sqlx::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 use chrono::{DateTime, Utc};
 use std::str::FromStr;
 
-pub use crate::models::{AppConfig, LocalStorageItem, VideoItem, VideoStatus, Website};
+pub use crate::models::{AppConfig, LocalStorageItem, VideoItem, VideoStatus, Website, YtdlpConfig, YtdlpTask, YtdlpTaskStatus};
 
 /// 从数据库行解析 VideoItem
 fn row_to_video_item(row: &SqliteRow) -> Result<VideoItem, sqlx::Error> {
@@ -45,6 +45,47 @@ fn row_to_video_item(row: &SqliteRow) -> Result<VideoItem, sqlx::Error> {
     })
 }
 
+/// 从数据库行解析 YtdlpTask（简化版）
+fn row_to_ytdlp_task(row: &SqliteRow) -> Result<YtdlpTask, sqlx::Error> {
+    let id: String = row.try_get("id")?;
+    let url: String = row.try_get("url")?;
+    let title: String = row.try_get("title")?;
+    let thumbnail: Option<String> = row.try_get("thumbnail")?;
+    let progress: i64 = row.try_get("progress")?;
+    let file_path: Option<String> = row.try_get("file_path")?;
+    let status_str: String = row.try_get("status")?;
+    let status: YtdlpTaskStatus = match status_str.as_str() {
+        "Downloading" => YtdlpTaskStatus::Downloading,
+        "Paused" => YtdlpTaskStatus::Paused,
+        "Completed" => YtdlpTaskStatus::Completed,
+        "Failed" => YtdlpTaskStatus::Failed,
+        "Cancelled" => YtdlpTaskStatus::Cancelled,
+        "Queued" => YtdlpTaskStatus::Queued,
+        _ => YtdlpTaskStatus::Pending,
+    };
+    let message: String = row.try_get("message")?;
+    let created_at_str: String = row.try_get("created_at")?;
+    let created_at: DateTime<Utc> = created_at_str.parse()
+        .unwrap_or_else(|_| Utc::now());
+    let completed_at: Option<DateTime<Utc>> = row.try_get("completed_at")
+        .ok()
+        .and_then(|s: String| s.parse().ok());
+
+    Ok(YtdlpTask {
+        id,
+        url,
+        title,
+        thumbnail,
+        progress: progress as u8,
+        speed: String::new(), // speed 是实时广播的，不入库
+        file_path,
+        status,
+        message,
+        created_at,
+        completed_at,
+    })
+}
+
 /// 分页结果
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PaginatedVideos {
@@ -56,6 +97,7 @@ pub struct PaginatedVideos {
 }
 
 /// 数据库管理器
+#[derive(Clone)]
 pub struct Database {
     pool: SqlitePool,
 }
@@ -133,6 +175,26 @@ impl Database {
 
         // 创建索引
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_websites_is_default ON websites(is_default DESC)").execute(&self.pool).await?;
+
+        // yt-dlp 下载任务表（简化版）
+        sqlx::query(r#"
+            CREATE TABLE IF NOT EXISTS ytdlp_tasks (
+                id TEXT PRIMARY KEY,
+                url TEXT NOT NULL,
+                title TEXT NOT NULL,
+                thumbnail TEXT,
+                progress INTEGER NOT NULL DEFAULT 0,
+                file_path TEXT,
+                status TEXT NOT NULL,
+                message TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                completed_at TEXT
+            )
+        "#).execute(&self.pool).await?;
+
+        // 创建索引
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_ytdlp_tasks_status ON ytdlp_tasks(status)").execute(&self.pool).await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_ytdlp_tasks_created_at ON ytdlp_tasks(created_at DESC)").execute(&self.pool).await?;
 
         Ok(())
     }
@@ -467,6 +529,70 @@ impl Database {
         Ok(())
     }
 
+    /// 获取 yt-dlp 配置
+    pub async fn get_ytdlp_config(&self) -> Result<YtdlpConfig, sqlx::Error> {
+        let quality = self.get_setting("ytdlp_quality").await?
+            .unwrap_or_else(|| "Best".to_string());
+        let format = self.get_setting("ytdlp_format").await?
+            .unwrap_or_else(|| "mp4".to_string());
+        let audio_format = self.get_setting("ytdlp_audio_format").await?
+            .unwrap_or_else(|| "mp3".to_string());
+        let concurrent_downloads: i32 = self.get_setting("ytdlp_concurrent_downloads").await?
+            .unwrap_or_else(|| "3".to_string())
+            .parse()
+            .unwrap_or(3);
+
+        let subtitles_str = self.get_setting("ytdlp_subtitles").await?
+            .unwrap_or_else(|| "false".to_string());
+        let subtitles = subtitles_str.parse().unwrap_or(false);
+
+        let subtitle_langs = self.get_setting("ytdlp_subtitle_langs").await?
+            .unwrap_or_else(|| "zh-CN,zh-Hans,zh-Hant,en".to_string());
+
+        let thumbnail_str = self.get_setting("ytdlp_thumbnail").await?
+            .unwrap_or_else(|| "false".to_string());
+        let thumbnail = thumbnail_str.parse().unwrap_or(false);
+
+        let audio_only_str = self.get_setting("ytdlp_audio_only").await?
+            .unwrap_or_else(|| "false".to_string());
+        let audio_only = audio_only_str.parse().unwrap_or(false);
+
+        let merge_video_str = self.get_setting("ytdlp_merge_video").await?
+            .unwrap_or_else(|| "true".to_string());
+        let merge_video = merge_video_str.parse().unwrap_or(true);
+
+        let extra_options = self.get_setting("ytdlp_extra_options").await?
+            .unwrap_or_default();
+
+        Ok(YtdlpConfig {
+            quality: crate::models::VideoQuality::from_string(&quality),
+            format,
+            subtitles,
+            subtitle_langs,
+            thumbnail,
+            audio_only,
+            audio_format,
+            merge_video,
+            concurrent_downloads: concurrent_downloads as u8,
+            extra_options,
+        })
+    }
+
+    /// 保存 yt-dlp 配置
+    pub async fn save_ytdlp_config(&self, config: &YtdlpConfig) -> Result<(), sqlx::Error> {
+        self.set_setting("ytdlp_quality", &config.quality.to_string()).await?;
+        self.set_setting("ytdlp_format", &config.format).await?;
+        self.set_setting("ytdlp_audio_format", &config.audio_format).await?;
+        self.set_setting("ytdlp_concurrent_downloads", &config.concurrent_downloads.to_string()).await?;
+        self.set_setting("ytdlp_subtitles", &config.subtitles.to_string()).await?;
+        self.set_setting("ytdlp_subtitle_langs", &config.subtitle_langs).await?;
+        self.set_setting("ytdlp_thumbnail", &config.thumbnail.to_string()).await?;
+        self.set_setting("ytdlp_audio_only", &config.audio_only.to_string()).await?;
+        self.set_setting("ytdlp_merge_video", &config.merge_video.to_string()).await?;
+        self.set_setting("ytdlp_extra_options", &config.extra_options).await?;
+        Ok(())
+    }
+
     /// 获取单个配置项
     pub async fn get_setting(&self, key: &str) -> Result<Option<String>, sqlx::Error> {
         let result: Option<String> = sqlx::query_scalar(
@@ -610,6 +736,106 @@ impl Database {
         // 设置新的默认网站
         sqlx::query("UPDATE websites SET is_default = 1 WHERE id = ?")
             .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    // ===== yt-dlp 任务管理 =====
+
+    /// 添加或更新下载任务（简化版）
+    pub async fn save_ytdlp_task(&self, task: &YtdlpTask) -> Result<(), sqlx::Error> {
+        let created_at = task.created_at.to_rfc3339();
+        let completed_at = task.completed_at.map(|d| d.to_rfc3339());
+
+        sqlx::query(r#"
+            INSERT OR REPLACE INTO ytdlp_tasks
+            (id, url, title, thumbnail, progress, file_path, status, message, created_at, completed_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        "#)
+            .bind(task.id.clone())
+            .bind(task.url.clone())
+            .bind(task.title.clone())
+            .bind(task.thumbnail.clone())
+            .bind(task.progress as i64)
+            .bind(task.file_path.clone())
+            .bind(format!("{:?}", task.status))
+            .bind(task.message.clone())
+            .bind(created_at)
+            .bind(completed_at)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// 获取所有下载任务
+    pub async fn get_all_ytdlp_tasks(&self) -> Result<Vec<YtdlpTask>, sqlx::Error> {
+        let rows = sqlx::query("SELECT * FROM ytdlp_tasks ORDER BY created_at DESC")
+            .fetch_all(&self.pool)
+            .await?;
+
+        let mut tasks = Vec::new();
+        for row in rows {
+            tasks.push(row_to_ytdlp_task(&row)?);
+        }
+        Ok(tasks)
+    }
+
+    /// 按 ID 获取下载任务
+    pub async fn get_ytdlp_task_by_id(&self, id: &str) -> Result<Option<YtdlpTask>, sqlx::Error> {
+        let row = sqlx::query("SELECT * FROM ytdlp_tasks WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?;
+
+        if let Some(r) = row {
+            Ok(Some(row_to_ytdlp_task(&r)?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// 获取下载任务（按状态）
+    pub async fn get_ytdlp_tasks_by_status(&self, status: &str) -> Result<Vec<YtdlpTask>, sqlx::Error> {
+        let rows = sqlx::query("SELECT * FROM ytdlp_tasks WHERE status = ? ORDER BY created_at DESC")
+            .bind(status)
+            .fetch_all(&self.pool)
+            .await?;
+
+        let mut tasks = Vec::new();
+        for row in rows {
+            tasks.push(row_to_ytdlp_task(&row)?);
+        }
+        Ok(tasks)
+    }
+
+    /// 删除下载任务
+    pub async fn delete_ytdlp_task(&self, id: &str) -> Result<(), sqlx::Error> {
+        sqlx::query("DELETE FROM ytdlp_tasks WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// 只更新任务进度（用于断点续传）
+    pub async fn update_ytdlp_task_progress(&self, id: &str, progress: u8, file_path: Option<String>) -> Result<(), sqlx::Error> {
+        sqlx::query(r#"
+            UPDATE ytdlp_tasks
+            SET progress = ?, file_path = ?
+            WHERE id = ?
+        "#)
+            .bind(progress as i64)
+            .bind(file_path)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// 清理已完成/失败的任务
+    pub async fn cleanup_ytdlp_tasks(&self) -> Result<(), sqlx::Error> {
+        sqlx::query("DELETE FROM ytdlp_tasks WHERE status IN ('Completed', 'Failed', 'Cancelled')")
             .execute(&self.pool)
             .await?;
         Ok(())

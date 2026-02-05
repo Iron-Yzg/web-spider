@@ -76,3 +76,65 @@ export interface ScraperInfo {
   id: string
   name: string
 }
+
+// ==================== yt-dlp 下载相关类型 ====================
+
+// 视频质量预设
+export enum VideoQuality {
+  Best = 'Best',
+  High = 'High',
+  Medium = 'Medium',
+  Low = 'Low',
+  Worst = 'Worst',
+  AudioOnly = 'AudioOnly',
+}
+
+// yt-dlp 下载配置
+export interface YtdlpConfig {
+  quality: VideoQuality
+  format: string
+  subtitles: boolean
+  subtitle_langs: string
+  thumbnail: boolean
+  audio_only: boolean
+  audio_format: string
+  merge_video: boolean
+  concurrent_downloads: number
+  extra_options: string
+}
+
+// yt-dlp 任务状态
+export enum YtdlpTaskStatus {
+  Pending = 'Pending',
+  Queued = 'Queued',
+  Downloading = 'Downloading',
+  Paused = 'Paused',
+  Completed = 'Completed',
+  Failed = 'Failed',
+  Cancelled = 'Cancelled',
+}
+
+// yt-dlp 下载任务（简化版）
+export interface YtdlpTask {
+  id: string
+  url: string
+  title: string
+  thumbnail?: string
+  progress: number
+  speed: string
+  file_path?: string
+  status: YtdlpTaskStatus
+  message: string
+  created_at: string
+  completed_at?: string
+}
+
+// yt-dlp 下载结果
+export interface YtdlpResult {
+  success: boolean
+  title: string
+  file_path: string
+  file_size: number
+  thumbnail?: string
+  message: string
+}

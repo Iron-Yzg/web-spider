@@ -4,6 +4,7 @@ use std::path::PathBuf;
 // 子模块
 mod scraper;
 mod downloader;
+mod ytdlp;
 
 // 重新导出 scraper 模块的内容
 pub use scraper::{
@@ -16,6 +17,18 @@ pub use scraper::{
 pub use downloader::{
     check_ffmpeg,
     batch_download_concurrent,
+};
+
+pub use ytdlp::{
+    check_ytdlp,
+    get_ytdlp_version,
+    get_video_info,
+    download_video,
+    download_video_with_continue,
+    cancel_task,
+    get_all_tasks,
+    get_task_by_id,
+    cleanup_tasks,
 };
 
 /// 应用状态（仅保留数据目录）

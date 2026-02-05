@@ -2,8 +2,9 @@
 import { ref } from 'vue'
 import ScraperPage from './components/ScraperPage.vue'
 import SettingsPage from './components/SettingsPage.vue'
+import YtdlpDownload from './components/YtdlpDownload.vue'
 
-type Tab = 'scraper' | 'settings'
+type Tab = 'scraper' | 'download' | 'settings'
 
 const currentTab = ref<Tab>('scraper')
 </script>
@@ -21,6 +22,12 @@ const currentTab = ref<Tab>('scraper')
           爬取视频
         </button>
         <button
+          :class="['nav-tab', { active: currentTab === 'download' }]"
+          @click="currentTab = 'download'"
+        >
+          下载视频
+        </button>
+        <button
           :class="['nav-tab', { active: currentTab === 'settings' }]"
           @click="currentTab = 'settings'"
         >
@@ -32,6 +39,7 @@ const currentTab = ref<Tab>('scraper')
     <!-- 主内容区 -->
     <main class="main-content">
       <ScraperPage v-if="currentTab === 'scraper'" />
+      <YtdlpDownload v-if="currentTab === 'download'" />
       <SettingsPage v-if="currentTab === 'settings'" />
     </main>
   </div>

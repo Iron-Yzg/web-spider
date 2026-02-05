@@ -33,91 +33,74 @@ pub fn finish_download(video_id: &str) {
     downloading.retain(|id| id != video_id);
 }
 
-/// 获取项目目录中的ffmpeg路径（用于dev模式）
-fn get_project_ffmpeg_path() -> Option<String> {
-    // 从当前exe或crate根目录查找项目ffmpeg目录
-    let exe_path = std::env::current_exe().ok()?;
-    let crate_root = exe_path
-        .parent()?
-        .parent()?
-        .parent()?
-        .join("src-tauri")
-        .join("ffmpeg")
-        .join("ffmpeg");
-
-    if crate_root.exists() {
-        return Some(crate_root.to_string_lossy().to_string());
-    }
-
-    // 也尝试从当前工作目录查找
-    let current_dir = std::env::current_dir().ok()?;
-    let project_ffmpeg = current_dir.join("src-tauri").join("ffmpeg").join("ffmpeg");
-    if project_ffmpeg.exists() {
-        return Some(project_ffmpeg.to_string_lossy().to_string());
-    }
-
-    None
-}
-
-/// 获取打包的ffmpeg路径（用于生产模式）
-fn get_bundled_ffmpeg_path() -> Option<String> {
-    // Tauri 打包的资源路径: {exe}/../resources/ffmpeg/ffmpeg
-    let resource_path = std::env::current_exe()
-        .ok()?
-        .parent()?
-        .parent()?
-        .join("resources")
-        .join("ffmpeg");
-
-    let ffmpeg_path = if cfg!(target_os = "macos") {
-        resource_path.join("ffmpeg")
+/// 获取 ffmpeg 路径（从 bin 目录查找）
+fn get_ffmpeg_path() -> PathBuf {
+    let ffmpeg_name = if cfg!(target_os = "macos") {
+        if cfg!(target_arch = "aarch64") {
+            "ffmpeg-aarch64-apple-darwin"
+        } else {
+            "ffmpeg-x86_64-apple-darwin"
+        }
     } else if cfg!(target_os = "windows") {
-        resource_path.join("ffmpeg.exe")
+        "ffmpeg-x86_64-pc-windows-msvc.exe"
     } else {
-        resource_path.join("ffmpeg")
+        "ffmpeg-x86_64-unknown-linux-gnu"
     };
 
-    if ffmpeg_path.exists() {
-        Some(ffmpeg_path.to_string_lossy().to_string())
-    } else {
-        None
+    // 查找路径列表
+    let search_paths = vec![
+        // 1. 可执行文件同目录下的 bin（生产环境）
+        std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+            .map(|p| p.join("bin")),
+        // 2. 项目根目录的 src-tauri/bin（开发环境）
+        std::env::current_dir()
+            .ok()
+            .map(|p| p.join("src-tauri").join("bin")),
+        // 3. 项目根目录的 bin（直接放在根目录）
+        std::env::current_dir()
+            .ok()
+            .map(|p| p.join("bin")),
+        // 4. 父目录的 bin
+        std::env::current_dir()
+            .ok()
+            .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+            .map(|p| p.join("bin")),
+    ];
+
+    // 尝试所有路径
+    for bin_path in search_paths.into_iter().flatten() {
+        let ffmpeg_path = bin_path.join(ffmpeg_name);
+        if ffmpeg_path.exists() {
+            return ffmpeg_path;
+        }
     }
+
+    // 回退到系统 PATH
+    tracing::warn!("[ffmpeg] 未找到，回退到系统 PATH: {}", ffmpeg_name);
+    PathBuf::from("ffmpeg")
 }
 
 /// 检查ffmpeg是否可用
 pub fn check_ffmpeg() -> bool {
-    // 先检查项目目录中的ffmpeg（dev模式）
-    if get_project_ffmpeg_path().is_some() {
-        return true;
-    }
-
-    // 再检查打包的ffmpeg（生产模式）
-    if get_bundled_ffmpeg_path().is_some() {
-        return true;
-    }
-
-    // 检查系统ffmpeg
-    let output = StdCommand::new("ffmpeg")
+    let ffmpeg_path = get_ffmpeg_path();
+    let output = StdCommand::new(&ffmpeg_path)
         .arg("-version")
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status();
-
     output.is_ok()
 }
 
 /// 获取ffmpeg路径
 pub fn find_ffmpeg() -> String {
-    // 先检查项目目录中的ffmpeg（dev模式）
-    if let Some(path) = get_project_ffmpeg_path() {
-        return path;
+    let ffmpeg_path = get_ffmpeg_path();
+    if ffmpeg_path.exists() {
+        return ffmpeg_path.to_string_lossy().to_string();
     }
 
-    // 再检查打包的ffmpeg（生产模式）
-    if let Some(path) = get_bundled_ffmpeg_path() {
-        return path;
-    }
-
+    // 检查系统 ffmpeg
     let possible_paths = vec![
         "/opt/homebrew/bin/ffmpeg",
         "/usr/local/bin/ffmpeg",
@@ -130,7 +113,7 @@ pub fn find_ffmpeg() -> String {
         }
     }
 
-    // 尝试which命令
+    // 尝试 which 命令
     if let Ok(output) = StdCommand::new("which").arg("ffmpeg").output() {
         if output.status.success() {
             if let Ok(s) = String::from_utf8(output.stdout) {

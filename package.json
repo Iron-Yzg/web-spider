@@ -23,15 +23,15 @@
     "lint": "vue-tsc --noEmit"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2",
-    "@tauri-apps/plugin-dialog": "^2.5.0",
-    "@tauri-apps/plugin-opener": "^2",
+    "@tauri-apps/api": "^2.10.1",
+    "@tauri-apps/plugin-dialog": "^2.6.0",
+    "@tauri-apps/plugin-opener": "^2.5.3",
     "artplayer": "^5.3.0",
     "hls.js": "^1.6.15",
     "vue": "^3.5.13"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2",
+    "@tauri-apps/cli": "^2.10.0",
     "@vitejs/plugin-vue": "^5.2.1",
     "typescript": "~5.6.2",
     "vite": "^6.0.3",
