@@ -6,6 +6,11 @@
   "permissions": [
     "core:default",
     "dialog:default",
-    "opener:default"
+    "opener:default",
+    "fs:default",
+    {
+      "identifier": "fs:allow-read",
+      "allow": [{ "path": "$DOWNLOADS/**" }]
+    }
   ]
 }

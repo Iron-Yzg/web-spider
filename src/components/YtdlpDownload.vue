@@ -290,9 +290,11 @@ const playerFilePath = ref('')
 // 打开播放器播放本地视频
 async function openPlayer(task: YtdlpTask) {
   if (task.file_path) {
-    // 转换本地路径为 asset:// URL
-    const decodedPath = decodeURIComponent(task.file_path)
-    const assetUrl = convertFileSrc(decodedPath)
+    // 使用 convertFileSrc 转换本地路径为 asset URL
+    const assetUrl = convertFileSrc(task.file_path)
+    console.log('[VideoPlayer] 本地文件路径:', task.file_path)
+    console.log('[VideoPlayer] asset URL:', assetUrl)
+
     playerSrc.value = assetUrl
     playerTitle.value = task.title || '本地视频'
     playerFilePath.value = task.file_path
@@ -571,7 +573,7 @@ watch([searchQuery, statusFilter, () => tasks.value], () => {
     <VideoPlayer
       v-show="playerVisible"
       :visible="playerVisible"
-      :src="playerSrc"
+          :src="playerSrc"
       :title="playerTitle"
       @close="handlePlayerClose"
     />
@@ -1219,5 +1221,54 @@ watch([searchQuery, statusFilter, () => tasks.value], () => {
 .btn-primary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* 原生视频播放器样式 */
+.player-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+}
+
+.player-container {
+  width: 80%;
+  max-width: 900px;
+  background: #1a1a2e;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.player-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: #252540;
+}
+
+.player-title {
+  color: #fff;
+  font-size: 14px;
+}
+
+.close-btn {
+  padding: 6px 12px;
+  background: #6366f1;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.native-video {
+  width: 100%;
+  display: block;
 }
 </style>
