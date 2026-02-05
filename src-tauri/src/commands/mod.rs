@@ -6,7 +6,7 @@ use tauri::{Emitter, State, WebviewWindow};
 use crate::db::{Database, PaginatedVideos};
 use crate::models::{
     AppConfig, DownloadProgress, ScrapeResult, VideoItem, VideoStatus, Website,
-    YtdlpConfig, YtdlpResult, YtdlpTask, YtdlpTaskStatus,
+    YtdlpConfig, YtdlpTask, YtdlpTaskStatus,
 };
 
 /// 清理下载临时文件（.part 文件等）
@@ -37,7 +37,7 @@ fn clean_temp_files(output_path: &str, title: &str) {
                     // 只清理 .part 和 .temp 文件（这些是明确的临时文件）
                     if ext_str == "part" || ext_str == "temp" {
                         if let Err(e) = std::fs::remove_file(entry.path()) {
-                            eprintln!("[rust] 清理临时文件失败: {} - {}", entry.path().display(), e);
+                            tracing::info!("[rust] 清理临时文件失败: {} - {}", entry.path().display(), e);
                         } else {
                             cleaned.push(filename_str.to_string());
                         }
@@ -48,7 +48,7 @@ fn clean_temp_files(output_path: &str, title: &str) {
     }
 
     if !cleaned.is_empty() {
-        eprintln!("[rust] 已清理 {} 个临时文件: {:?}", cleaned.len(), cleaned);
+        tracing::info!("[rust] 已清理 {} 个临时文件: {:?}", cleaned.len(), cleaned);
     }
 }
 
@@ -87,7 +87,7 @@ pub fn select_directory() -> Result<String, String> {
 // 打开路径（文件或文件夹）
 #[tauri::command]
 pub fn open_path(path: String) -> Result<(), String> {
-    eprintln!("[rust] 打开路径: {}", path);
+    tracing::info!("[rust] 打开路径: {}", path);
 
     // 获取实际路径（如果是文件则打开其所在文件夹）
     let actual_path = if std::path::Path::new(&path).is_file() {
@@ -100,7 +100,7 @@ pub fn open_path(path: String) -> Result<(), String> {
         path.clone()
     };
 
-    eprintln!("[rust] 实际打开路径: {}", actual_path);
+    tracing::info!("[rust] 实际打开路径: {}", actual_path);
 
     // 根据操作系统执行不同命令
     let result = if cfg!(target_os = "windows") {
@@ -123,12 +123,12 @@ pub fn open_path(path: String) -> Result<(), String> {
 
     match result {
         Ok(_) => {
-            eprintln!("[rust] 打开路径成功");
+            tracing::info!("[rust] 打开路径成功");
             Ok(())
         }
         Err(e) => {
             let msg = format!("打开路径失败: {}", e);
-            eprintln!("[rust] {}", msg);
+            tracing::info!("[rust] {}", msg);
             Err(msg)
         }
     }
@@ -520,52 +520,8 @@ pub async fn get_videos_by_website(
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
-pub fn check_ytdlp() -> bool {
-    crate::services::check_ytdlp()
-}
-
-#[cfg(feature = "desktop")]
-#[tauri::command]
-pub async fn get_ytdlp_version() -> String {
-    crate::services::get_ytdlp_version().await
-}
-
-#[cfg(feature = "desktop")]
-#[tauri::command]
 pub async fn get_video_info(url: String) -> Result<YtdlpTask, String> {
     crate::services::get_video_info(&url).await
-}
-
-#[cfg(feature = "desktop")]
-#[tauri::command]
-pub async fn download_ytdlp_video(
-    window: WebviewWindow,
-    url: String,
-    output_path: String,
-    config: YtdlpConfig,
-) -> Result<YtdlpResult, String> {
-    let task_id = uuid::Uuid::new_v4().to_string();
-    let (progress_tx, _) = broadcast::channel::<YtdlpTask>(100);
-
-    let window_clone = window.clone();
-    let mut progress_rx = progress_tx.subscribe();
-    task::spawn(async move {
-        while let Ok(progress) = progress_rx.recv().await {
-            let _ = window_clone.emit("ytdlp-progress", progress);
-        }
-    });
-
-    let result = crate::services::download_video(
-        &url,
-        &output_path,
-        &task_id,
-        &config,
-        |p| {
-            let _ = progress_tx.send(p);
-        }
-    ).await?;
-
-    Ok(result)
 }
 
 #[cfg(feature = "desktop")]
@@ -573,7 +529,6 @@ pub async fn download_ytdlp_video(
 pub async fn add_ytdlp_tasks(
     db: State<'_, Database>,
     urls: Vec<String>,
-    output_path: String,
 ) -> Result<Vec<YtdlpTask>, String> {
     // 获取视频信息并创建任务
     let mut tasks = Vec::new();
@@ -585,7 +540,6 @@ pub async fn add_ytdlp_tasks(
                     id: task.id,
                     url: task.url,
                     title: task.title,
-                    thumbnail: task.thumbnail,
                     progress: 0,
                     speed: String::new(),
                     file_path: None,
@@ -685,14 +639,14 @@ pub async fn start_ytdlp_task(
 
     // 获取已保存的进度（用于断点续传）
     let saved_progress = task.progress;
-    eprintln!("[rust] 开始下载任务 {}, URL: {}, 已保存进度: {}%", task_id, task.url, saved_progress);
+    tracing::info!("[rust] 开始下载任务 {}, URL: {}, 已保存进度: {}%", task_id, task.url, saved_progress);
 
     // 只有全新下载时才清理临时文件（进度为0时），保留进度时需要断点续传
     if saved_progress == 0 {
-        eprintln!("[rust] 清理临时文件...");
+        tracing::info!("[rust] 清理临时文件...");
         clean_temp_files(&output_path, &task.title);
     } else {
-        eprintln!("[rust] 检测到已保存进度 {}%，尝试断点续传...", saved_progress);
+        tracing::info!("[rust] 检测到已保存进度 {}%，尝试断点续传...", saved_progress);
     }
 
     // 更新任务状态为下载中（保留已保存的进度）
@@ -751,11 +705,11 @@ pub async fn start_ytdlp_task(
     completed_task.message = match &result {
         Ok(r) => {
             completed_task.file_path = Some(r.file_path.clone());
-            eprintln!("[rust] 下载完成: {}", task_id);
+            tracing::info!("[rust] 下载完成: {}", task_id);
             "下载完成".to_string()
         },
         Err(e) => {
-            eprintln!("[rust] 下载失败: {} - {}", task_id, e);
+            tracing::info!("[rust] 下载失败: {} - {}", task_id, e);
             format!("下载失败: {}", e)
         },
     };

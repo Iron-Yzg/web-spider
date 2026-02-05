@@ -130,8 +130,9 @@ impl Default for Website {
 /// yt-dlp 下载配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct YtdlpConfig {
-    /// 视频质量预设
-    pub quality: VideoQuality,
+    /// 视频质量：0=最佳，480/720/1080=对应分辨率，2160=4K
+    /// backend 的 build_format_string 函数会根据数值组装 yt-dlp 格式字符串
+    pub quality: u32,
     /// 视频格式 (mp4, webm, etc.)
     pub format: String,
     /// 是否下载字幕
@@ -155,7 +156,7 @@ pub struct YtdlpConfig {
 impl Default for YtdlpConfig {
     fn default() -> Self {
         Self {
-            quality: VideoQuality::Best,
+            quality: 720,  // 0=最佳
             format: "mp4".to_string(),
             subtitles: false,
             subtitle_langs: "zh-CN,zh-Hans,zh-Hant,en".to_string(),
@@ -165,57 +166,6 @@ impl Default for YtdlpConfig {
             merge_video: true,
             concurrent_downloads: 3,
             extra_options: String::new(),
-        }
-    }
-}
-
-/// 视频质量预设
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum VideoQuality {
-    Best,       // 最佳质量
-    High,       // 1080p
-    Medium,     // 720p
-    Low,        // 480p
-    Worst,      // 最差质量
-    AudioOnly,  // 仅音频
-}
-
-impl std::fmt::Display for VideoQuality {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            VideoQuality::Best => write!(f, "Best"),
-            VideoQuality::High => write!(f, "High"),
-            VideoQuality::Medium => write!(f, "Medium"),
-            VideoQuality::Low => write!(f, "Low"),
-            VideoQuality::Worst => write!(f, "Worst"),
-            VideoQuality::AudioOnly => write!(f, "AudioOnly"),
-        }
-    }
-}
-
-impl VideoQuality {
-    /// 转换为 yt-dlp 的 format 参数
-    pub fn to_format_string(&self) -> String {
-        match self {
-            VideoQuality::Best => "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best".to_string(),
-            VideoQuality::High => "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best".to_string(),
-            VideoQuality::Medium => "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best".to_string(),
-            VideoQuality::Low => "bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=480]+bestaudio/best".to_string(),
-            VideoQuality::Worst => "worstvideo[ext=mp4]+worstaudio[ext=m4a]/worstvideo+worstaudio".to_string(),
-            VideoQuality::AudioOnly => "bestaudio[ext=m4a]".to_string(),
-        }
-    }
-
-    /// 从字符串创建
-    pub fn from_string(s: &str) -> Self {
-        match s.to_lowercase().as_str() {
-            "high" => VideoQuality::High,
-            "medium" => VideoQuality::Medium,
-            "low" => VideoQuality::Low,
-            "worst" => VideoQuality::Worst,
-            "audioonly" | "audio_only" => VideoQuality::AudioOnly,
-            _ => VideoQuality::Best,
         }
     }
 }
@@ -240,8 +190,6 @@ pub struct YtdlpTask {
     pub url: String,
     /// 任务标题（视频名称）
     pub title: String,
-    /// 视频封面地址
-    pub thumbnail: Option<String>,
     /// 下载进度 (0-100)
     pub progress: u8,
     /// 下载速度 (如 "229.80KiB/s")
@@ -264,7 +212,6 @@ impl Default for YtdlpTask {
             id: Uuid::new_v4().to_string(),
             url: String::new(),
             title: String::new(),
-            thumbnail: None,
             progress: 0,
             speed: String::new(),
             file_path: None,
@@ -283,6 +230,5 @@ pub struct YtdlpResult {
     pub title: String,
     pub file_path: String,
     pub file_size: u64,
-    pub thumbnail: Option<String>,
     pub message: String,
 }

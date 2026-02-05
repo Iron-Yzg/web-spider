@@ -32,7 +32,7 @@ const config = ref<AppConfig>({
 
 // yt-dlp 配置
 const ytdlpConfig = ref<YtdlpConfig>({
-  quality: 'Best' as any,
+  quality: 720,  // 0=最佳，480/720/1080=对应分辨率，2160=4K
   format: 'mp4',
   subtitles: false,
   subtitle_langs: 'zh-CN,zh-Hans,zh-Hant,en',
@@ -500,12 +500,12 @@ async function saveYtdlpConfig() {
                 <div class="form-group">
                   <label>视频质量</label>
                   <select v-model="ytdlpConfig.quality" class="form-input">
-                    <option value="best">最佳质量</option>
-                    <option value="high">1080p 高清</option>
-                    <option value="medium">720p 中等</option>
-                    <option value="low">480p 流畅</option>
-                    <option value="worst">最差质量</option>
-                    <option value="audio_only">仅音频</option>
+                    <option :value="720">最佳质量</option>
+                    <option :value="2160">4K (2160p)</option>
+                    <option :value="1080">1080p 高清</option>
+                    <option :value="720">720p 中等</option>
+                    <option :value="480">480p 流畅</option>
+                    <option :value="360">360p 流畅</option>
                   </select>
                 </div>
 

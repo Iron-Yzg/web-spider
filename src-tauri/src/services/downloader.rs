@@ -1,4 +1,5 @@
 use crate::models::DownloadProgress;
+use crate::services::get_ffmpeg_path;
 use reqwest;
 use std::fs;
 use std::path::PathBuf;
@@ -13,12 +14,6 @@ use futures::stream::{self, StreamExt};
 pub static DOWNLOADING_VIDEOS: std::sync::LazyLock<Arc<Mutex<Vec<String>>>> =
     std::sync::LazyLock::new(|| Arc::new(Mutex::new(Vec::new())));
 
-/// 检查视频是否正在下载
-pub fn is_downloading(video_id: &str) -> bool {
-    let downloading = DOWNLOADING_VIDEOS.lock().unwrap();
-    downloading.contains(&video_id.to_string())
-}
-
 /// 标记视频开始下载
 pub fn start_download(video_id: &str) {
     let mut downloading = DOWNLOADING_VIDEOS.lock().unwrap();
@@ -31,55 +26,6 @@ pub fn start_download(video_id: &str) {
 pub fn finish_download(video_id: &str) {
     let mut downloading = DOWNLOADING_VIDEOS.lock().unwrap();
     downloading.retain(|id| id != video_id);
-}
-
-/// 获取 ffmpeg 路径（从 bin 目录查找）
-fn get_ffmpeg_path() -> PathBuf {
-    let ffmpeg_name = if cfg!(target_os = "macos") {
-        if cfg!(target_arch = "aarch64") {
-            "ffmpeg-aarch64-apple-darwin"
-        } else {
-            "ffmpeg-x86_64-apple-darwin"
-        }
-    } else if cfg!(target_os = "windows") {
-        "ffmpeg-x86_64-pc-windows-msvc.exe"
-    } else {
-        "ffmpeg-x86_64-unknown-linux-gnu"
-    };
-
-    // 查找路径列表
-    let search_paths = vec![
-        // 1. 可执行文件同目录下的 bin（生产环境）
-        std::env::current_exe()
-            .ok()
-            .and_then(|p| p.parent().map(|p| p.to_path_buf()))
-            .map(|p| p.join("bin")),
-        // 2. 项目根目录的 src-tauri/bin（开发环境）
-        std::env::current_dir()
-            .ok()
-            .map(|p| p.join("src-tauri").join("bin")),
-        // 3. 项目根目录的 bin（直接放在根目录）
-        std::env::current_dir()
-            .ok()
-            .map(|p| p.join("bin")),
-        // 4. 父目录的 bin
-        std::env::current_dir()
-            .ok()
-            .and_then(|p| p.parent().map(|p| p.to_path_buf()))
-            .map(|p| p.join("bin")),
-    ];
-
-    // 尝试所有路径
-    for bin_path in search_paths.into_iter().flatten() {
-        let ffmpeg_path = bin_path.join(ffmpeg_name);
-        if ffmpeg_path.exists() {
-            return ffmpeg_path;
-        }
-    }
-
-    // 回退到系统 PATH
-    tracing::warn!("[ffmpeg] 未找到，回退到系统 PATH: {}", ffmpeg_name);
-    PathBuf::from("ffmpeg")
 }
 
 /// 检查ffmpeg是否可用

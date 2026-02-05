@@ -50,7 +50,6 @@ fn row_to_ytdlp_task(row: &SqliteRow) -> Result<YtdlpTask, sqlx::Error> {
     let id: String = row.try_get("id")?;
     let url: String = row.try_get("url")?;
     let title: String = row.try_get("title")?;
-    let thumbnail: Option<String> = row.try_get("thumbnail")?;
     let progress: i64 = row.try_get("progress")?;
     let file_path: Option<String> = row.try_get("file_path")?;
     let status_str: String = row.try_get("status")?;
@@ -75,7 +74,6 @@ fn row_to_ytdlp_task(row: &SqliteRow) -> Result<YtdlpTask, sqlx::Error> {
         id,
         url,
         title,
-        thumbnail,
         progress: progress as u8,
         speed: String::new(), // speed 是实时广播的，不入库
         file_path,
@@ -176,13 +174,12 @@ impl Database {
         // 创建索引
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_websites_is_default ON websites(is_default DESC)").execute(&self.pool).await?;
 
-        // yt-dlp 下载任务表（简化版）
+        // yt-dlp 下载任务表（简化版，不带 thumbnail 列）
         sqlx::query(r#"
             CREATE TABLE IF NOT EXISTS ytdlp_tasks (
                 id TEXT PRIMARY KEY,
                 url TEXT NOT NULL,
                 title TEXT NOT NULL,
-                thumbnail TEXT,
                 progress INTEGER NOT NULL DEFAULT 0,
                 file_path TEXT,
                 status TEXT NOT NULL,
@@ -565,7 +562,7 @@ impl Database {
             .unwrap_or_default();
 
         Ok(YtdlpConfig {
-            quality: crate::models::VideoQuality::from_string(&quality),
+            quality: quality.parse().unwrap_or(0),
             format,
             subtitles,
             subtitle_langs,
@@ -750,13 +747,12 @@ impl Database {
 
         sqlx::query(r#"
             INSERT OR REPLACE INTO ytdlp_tasks
-            (id, url, title, thumbnail, progress, file_path, status, message, created_at, completed_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (id, url, title, progress, file_path, status, message, created_at, completed_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#)
             .bind(task.id.clone())
             .bind(task.url.clone())
             .bind(task.title.clone())
-            .bind(task.thumbnail.clone())
             .bind(task.progress as i64)
             .bind(task.file_path.clone())
             .bind(format!("{:?}", task.status))

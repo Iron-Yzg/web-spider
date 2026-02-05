@@ -79,19 +79,11 @@ export interface ScraperInfo {
 
 // ==================== yt-dlp 下载相关类型 ====================
 
-// 视频质量预设
-export enum VideoQuality {
-  Best = 'Best',
-  High = 'High',
-  Medium = 'Medium',
-  Low = 'Low',
-  Worst = 'Worst',
-  AudioOnly = 'AudioOnly',
-}
-
 // yt-dlp 下载配置
 export interface YtdlpConfig {
-  quality: VideoQuality
+  // 视频质量：分辨率数值，如 0=最佳，480=480p，720=720p，1080=1080p，2160=4K
+  // backend 的 build_format_string 函数会根据数值组装 yt-dlp 格式字符串
+  quality: number
   format: string
   subtitles: boolean
   subtitle_langs: string
@@ -119,7 +111,6 @@ export interface YtdlpTask {
   id: string
   url: string
   title: string
-  thumbnail?: string
   progress: number
   speed: string
   file_path?: string
@@ -135,6 +126,5 @@ export interface YtdlpResult {
   title: string
   file_path: string
   file_size: number
-  thumbnail?: string
   message: string
 }

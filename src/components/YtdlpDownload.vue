@@ -8,11 +8,8 @@ import VideoPlayer from './VideoPlayer.vue'
 // 任务列表
 const tasks = ref<YtdlpTask[]>([])
 
-// 正在运行的任务ID集合
-const runningTaskIds = ref<Set<string>>(new Set())
-
 // yt-dlp 状态
-const ytdlpAvailable = ref(false)
+const ytdlpAvailable = ref(true)
 const ytdlpVersion = ref('')
 
 // 下载配置
@@ -34,15 +31,6 @@ let unlistenProgress: (() => void) | null = null
 let unlistenComplete: (() => void) | null = null
 
 onMounted(async () => {
-  // 检查 yt-dlp
-  try {
-    ytdlpAvailable.value = await invoke<boolean>('check_ytdlp')
-    if (ytdlpAvailable.value) {
-      ytdlpVersion.value = await invoke<string>('get_ytdlp_version')
-    }
-  } catch (e) {
-    console.error('检查 yt-dlp 失败:', e)
-  }
 
   // 加载下载配置
   try {
@@ -58,12 +46,8 @@ onMounted(async () => {
   // 监听进度
   unlistenProgress = await listen<YtdlpTask>('ytdlp-progress', async (event: { payload: YtdlpTask }) => {
     const task = event.payload
-    // 标记为运行中
-    runningTaskIds.value.add(task.id)
-
     const index = tasks.value.findIndex(t => t.id === task.id)
     if (index !== -1) {
-      // 更新现有任务
       tasks.value[index] = task
     } else {
       tasks.value.push(task)
@@ -73,11 +57,11 @@ onMounted(async () => {
   // 监听下载完成
   unlistenComplete = await listen<YtdlpTask>('ytdlp-complete', async (event: { payload: YtdlpTask }) => {
     const completedTask = event.payload
-    // 从运行中移除
-    runningTaskIds.value.delete(completedTask.id)
-
-    // 从数据库刷新任务列表，确保状态最新
-    await refreshTasks()
+    console.log('[ytdlp-complete] 收到完成事件:', completedTask.id, 'status:', completedTask.status)
+    const index = tasks.value.findIndex(t => t.id === completedTask.id)
+    if (index !== -1) {
+      tasks.value[index] = completedTask
+    }
   })
 })
 
@@ -90,30 +74,15 @@ onUnmounted(() => {
 async function refreshTasks() {
   try {
     const result = await invoke<YtdlpTask[]>('get_ytdlp_tasks')
-    // 调试：检查第一个任务的thumbnail
-    if (result.length > 0) {
-      console.log('First task thumbnail:', result[0].thumbnail)
-      console.log('First task title:', result[0].title)
-    }
     tasks.value = result
   } catch (e) {
     console.error('刷新任务列表失败:', e)
   }
 }
 
-// 判断任务是否正在运行
-function isTaskRunning(taskId: string): boolean {
-  return runningTaskIds.value.has(taskId)
-}
-
-// 判断任务是否可以开始（已暂停/失败/取消 且 没有在运行）- 已完成不算
+// 判断任务是否可以开始
 function canStart(task: YtdlpTask): boolean {
-  return task.status !== 'Completed' && !isTaskRunning(task.id)
-}
-
-// 判断任务是否可以删除（未在运行中）
-function canDelete(task: YtdlpTask): boolean {
-  return !isTaskRunning(task.id)
+  return task.status !== 'Completed' && task.status !== 'Downloading'
 }
 
 // 打开添加弹窗
@@ -169,7 +138,6 @@ async function addTasks() {
   try {
     await invoke('add_ytdlp_tasks', {
       urls: urls.value,
-      outputPath: downloadPath.value,
     })
 
     successMessage.value = `已添加 ${urls.value.length} 个任务`
@@ -185,7 +153,6 @@ async function addTasks() {
 async function stopTask(taskId: string) {
   try {
     await invoke('stop_ytdlp_task', { taskId: taskId })
-    runningTaskIds.value.delete(taskId)
     await refreshTasks()
   } catch (e) {
     console.error('停止任务失败:', e)
@@ -199,10 +166,8 @@ async function startTask(taskId: string) {
       taskId: taskId,
       outputPath: downloadPath.value,
     })
-    runningTaskIds.value.add(taskId)
   } catch (e) {
     console.error('开始任务失败:', e)
-    runningTaskIds.value.delete(taskId)
     await refreshTasks()
   }
 }
@@ -211,9 +176,9 @@ async function startTask(taskId: string) {
 async function deleteTask(taskId: string) {
   try {
     // 如果任务正在运行，先停止
-    if (isTaskRunning(taskId)) {
+    const task = tasks.value.find(t => t.id === taskId)
+    if (task && task.status === 'Downloading') {
       await invoke('stop_ytdlp_task', { taskId: taskId })
-      runningTaskIds.value.delete(taskId)
     }
     // 从数据库删除任务（会清理临时文件）
     await invoke('delete_ytdlp_task', { taskId: taskId })
@@ -286,6 +251,16 @@ const playerVisible = ref(false)
 const playerSrc = ref('')
 const playerTitle = ref('')
 const playerFilePath = ref('')
+const videoRefs = ref<Record<string, HTMLVideoElement>>({})
+
+// 视频加载完成后跳转到第一帧并暂停
+function handleVideoLoaded(videoId: string) {
+  const video = videoRefs.value[videoId]
+  if (video) {
+    video.currentTime = 0.1  // 跳转到 0.1 秒（确保不是黑屏）
+    video.pause()
+  }
+}
 
 // 打开播放器播放本地视频
 async function openPlayer(task: YtdlpTask) {
@@ -407,15 +382,19 @@ watch([searchQuery, statusFilter, () => tasks.value], () => {
             没有找到匹配的任务
           </div>
 
-          <div v-for="task in filteredTasks" :key="task.id" class="table-row" :class="{ running: isTaskRunning(task.id) }">
-            <!-- 封面 -->
+          <div v-for="task in filteredTasks" :key="task.id" class="table-row" :class="{ running: task.status === 'Downloading' }">
+            <!-- 封面：已完成有本地文件的用 video 预览，否则用 thumbnail -->
             <div class="col-cover">
-              <img
-                v-if="task.thumbnail"
-                :src="task.thumbnail"
-                :alt="task.title"
-                class="cover-thumbnail"
-              />
+              <!-- 已下载完成的视频，用 video 标签显示预览 -->
+              <video
+                v-if="task.status === 'Completed' && task.file_path"
+                :ref="el => videoRefs[task.id] = el as HTMLVideoElement"
+                :src="convertFileSrc(task.file_path)"
+                class="cover-video"
+                muted
+                preload="auto"
+                @loadeddata="handleVideoLoaded(task.id)"
+              ></video>
               <div v-else class="cover-placeholder-small">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                   <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect>
@@ -431,7 +410,7 @@ watch([searchQuery, statusFilter, () => tasks.value], () => {
               <span class="task-title" :title="task.title">{{ task.title || '未知标题' }}</span>
               <span class="task-url" :title="task.url">{{ task.url }}</span>
               <!-- 下载中显示进度信息 -->
-              <div v-if="task.status === 'Downloading' && isTaskRunning(task.id)" class="task-progress-info">
+              <div v-if="task.status === 'Downloading'" class="task-progress-info">
                 <span class="progress-percent">{{ Math.round(task.progress) }}%</span>
                 <span v-if="task.speed" class="progress-speed">{{ task.speed }}</span>
               </div>
@@ -444,7 +423,7 @@ watch([searchQuery, statusFilter, () => tasks.value], () => {
             <!-- 状态 -->
             <div class="col-status">
               <!-- 下载中显示进度条 -->
-              <div v-if="task.status === 'Downloading' && isTaskRunning(task.id)" class="task-progress">
+              <div v-if="task.status === 'Downloading'" class="task-progress">
                 <div class="progress-bar">
                   <div class="progress-fill" :style="{ width: task.progress + '%' }"></div>
                 </div>
@@ -464,7 +443,7 @@ watch([searchQuery, statusFilter, () => tasks.value], () => {
             <div class="col-action">
               <!-- 下载中显示停止 -->
               <button
-                v-if="isTaskRunning(task.id)"
+                v-if="task.status === 'Downloading'"
                 @click="stopTask(task.id)"
                 class="action-btn stop"
                 title="停止"
@@ -503,7 +482,6 @@ watch([searchQuery, statusFilter, () => tasks.value], () => {
 
               <!-- 未运行且不是已完成的任务显示删除 -->
               <button
-                v-if="canDelete(task) && task.status !== 'Completed'"
                 @click="deleteTask(task.id)"
                 class="action-btn delete"
                 title="删除"
@@ -533,10 +511,7 @@ watch([searchQuery, statusFilter, () => tasks.value], () => {
         </div>
 
         <div class="dialog-body">
-          <div class="form-group">
-            <label>下载路径</label>
-            <input type="text" v-model="downloadPath" class="form-input" placeholder="输入下载路径" />
-          </div>
+          
 
           <div class="form-group">
             <label>视频链接</label>
@@ -808,10 +783,11 @@ watch([searchQuery, statusFilter, () => tasks.value], () => {
   background: #f5f5f5;
 }
 
-.cover-thumbnail {
+.cover-video {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  background: #000;
 }
 
 .cover-placeholder-small {
@@ -1223,52 +1199,4 @@ watch([searchQuery, statusFilter, () => tasks.value], () => {
   cursor: not-allowed;
 }
 
-/* 原生视频播放器样式 */
-.player-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.8);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 10000;
-}
-
-.player-container {
-  width: 80%;
-  max-width: 900px;
-  background: #1a1a2e;
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.player-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 16px;
-  background: #252540;
-}
-
-.player-title {
-  color: #fff;
-  font-size: 14px;
-}
-
-.close-btn {
-  padding: 6px 12px;
-  background: #6366f1;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.native-video {
-  width: 100%;
-  display: block;
-}
 </style>
