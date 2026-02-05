@@ -84,6 +84,56 @@ pub fn select_directory() -> Result<String, String> {
     Err("DIALOG_REQUIRED".to_string())
 }
 
+// 打开路径（文件或文件夹）
+#[tauri::command]
+pub fn open_path(path: String) -> Result<(), String> {
+    eprintln!("[rust] 打开路径: {}", path);
+
+    // 获取实际路径（如果是文件则打开其所在文件夹）
+    let actual_path = if std::path::Path::new(&path).is_file() {
+        if let Some(parent) = std::path::Path::new(&path).parent() {
+            parent.to_string_lossy().to_string()
+        } else {
+            path.clone()
+        }
+    } else {
+        path.clone()
+    };
+
+    eprintln!("[rust] 实际打开路径: {}", actual_path);
+
+    // 根据操作系统执行不同命令
+    let result = if cfg!(target_os = "windows") {
+        std::process::Command::new("cmd")
+            .args(&["/c", "start", &actual_path])
+            .spawn()
+            .map(|_| ())
+    } else if cfg!(target_os = "macos") {
+        std::process::Command::new("open")
+            .arg(&actual_path)
+            .spawn()
+            .map(|_| ())
+    } else {
+        // Linux
+        std::process::Command::new("xdg-open")
+            .arg(&actual_path)
+            .spawn()
+            .map(|_| ())
+    };
+
+    match result {
+        Ok(_) => {
+            eprintln!("[rust] 打开路径成功");
+            Ok(())
+        }
+        Err(e) => {
+            let msg = format!("打开路径失败: {}", e);
+            eprintln!("[rust] {}", msg);
+            Err(msg)
+        }
+    }
+}
+
 // 获取所有视频（从数据库）
 #[tauri::command]
 pub async fn get_videos(db: State<'_, Database>) -> Result<Vec<VideoItem>, String> {
@@ -423,6 +473,11 @@ pub async fn get_websites(db: State<'_, Database>) -> Result<Vec<Website>, Strin
     db.get_all_websites().await.map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+pub async fn get_website_by_name(db: State<'_, Database>, name: String) -> Result<Option<Website>, String> {
+    db.get_website_by_name(&name).await.map_err(|e| e.to_string())
+}
+
 #[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn save_website(db: State<'_, Database>, website: Website) -> Result<(), String> {
@@ -709,6 +764,9 @@ pub async fn start_ytdlp_task(
 
     db.save_ytdlp_task(&completed_task).await
         .map_err(|e| e.to_string())?;
+
+    // 发送完成事件，通知前端刷新状态
+    let _ = window.emit("ytdlp-complete", completed_task.clone());
 
     Ok(())
 }

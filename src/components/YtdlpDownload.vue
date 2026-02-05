@@ -1,11 +1,15 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
-import { invoke } from '@tauri-apps/api/core'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { invoke, convertFileSrc } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { YtdlpTask, YtdlpTaskStatus } from '../types'
+import VideoPlayer from './VideoPlayer.vue'
 
 // 任务列表
 const tasks = ref<YtdlpTask[]>([])
+
+// 正在运行的任务ID集合
+const runningTaskIds = ref<Set<string>>(new Set())
 
 // yt-dlp 状态
 const ytdlpAvailable = ref(false)
@@ -13,6 +17,10 @@ const ytdlpVersion = ref('')
 
 // 下载配置
 const downloadPath = ref('./downloads')
+
+// 搜索和筛选
+const searchQuery = ref('')
+const statusFilter = ref<YtdlpTaskStatus | ''>('')
 
 // 弹窗状态
 const showAddDialog = ref(false)
@@ -23,6 +31,7 @@ const successMessage = ref('')
 
 // 监听器
 let unlistenProgress: (() => void) | null = null
+let unlistenComplete: (() => void) | null = null
 
 onMounted(async () => {
   // 检查 yt-dlp
@@ -44,49 +53,68 @@ onMounted(async () => {
   }
 
   // 加载任务列表
-  try {
-    tasks.value = await invoke<YtdlpTask[]>('get_ytdlp_tasks')
-  } catch (e) {
-    console.error('加载任务失败:', e)
-  }
+  await refreshTasks()
 
   // 监听进度
   unlistenProgress = await listen<YtdlpTask>('ytdlp-progress', async (event: { payload: YtdlpTask }) => {
     const task = event.payload
+    // 标记为运行中
+    runningTaskIds.value.add(task.id)
+
     const index = tasks.value.findIndex(t => t.id === task.id)
     if (index !== -1) {
       // 更新现有任务
       tasks.value[index] = task
     } else {
-      // 任务可能还没添加到列表，尝试添加到本地
       tasks.value.push(task)
-      // 同时从后端刷新任务列表以确保数据一致
-      try {
-        const allTasks = await invoke<YtdlpTask[]>('get_ytdlp_tasks')
-        // 合并任务，保持前端状态但更新数据
-        for (const t of allTasks) {
-          const existingIdx = tasks.value.findIndex(st => st.id === t.id)
-          if (existingIdx !== -1) {
-            // 如果任务在本地有更新（如下进度），保留本地版本
-            if (tasks.value[existingIdx].progress >= t.progress) {
-              tasks.value[existingIdx] = tasks.value[existingIdx]
-            } else {
-              tasks.value[existingIdx] = t
-            }
-          } else {
-            tasks.value.push(t)
-          }
-        }
-      } catch (e) {
-        console.error('刷新任务列表失败:', e)
-      }
     }
+  })
+
+  // 监听下载完成
+  unlistenComplete = await listen<YtdlpTask>('ytdlp-complete', async (event: { payload: YtdlpTask }) => {
+    const completedTask = event.payload
+    // 从运行中移除
+    runningTaskIds.value.delete(completedTask.id)
+
+    // 从数据库刷新任务列表，确保状态最新
+    await refreshTasks()
   })
 })
 
 onUnmounted(() => {
   if (unlistenProgress) unlistenProgress()
+  if (unlistenComplete) unlistenComplete()
 })
+
+// 刷新任务列表
+async function refreshTasks() {
+  try {
+    const result = await invoke<YtdlpTask[]>('get_ytdlp_tasks')
+    // 调试：检查第一个任务的thumbnail
+    if (result.length > 0) {
+      console.log('First task thumbnail:', result[0].thumbnail)
+      console.log('First task title:', result[0].title)
+    }
+    tasks.value = result
+  } catch (e) {
+    console.error('刷新任务列表失败:', e)
+  }
+}
+
+// 判断任务是否正在运行
+function isTaskRunning(taskId: string): boolean {
+  return runningTaskIds.value.has(taskId)
+}
+
+// 判断任务是否可以开始（已暂停/失败/取消 且 没有在运行）- 已完成不算
+function canStart(task: YtdlpTask): boolean {
+  return task.status !== 'Completed' && !isTaskRunning(task.id)
+}
+
+// 判断任务是否可以删除（未在运行中）
+function canDelete(task: YtdlpTask): boolean {
+  return !isTaskRunning(task.id)
+}
 
 // 打开添加弹窗
 function openAddDialog() {
@@ -100,15 +128,6 @@ function openAddDialog() {
 // 关闭添加弹窗
 function closeAddDialog() {
   showAddDialog.value = false
-}
-
-// 添加 URL
-function addUrl() {
-  const url = urlInput.value.trim()
-  if (url && isValidUrl(url) && !urls.value.includes(url)) {
-    urls.value.push(url)
-    urlInput.value = ''
-  }
 }
 
 // 移除 URL
@@ -126,7 +145,7 @@ function isValidUrl(url: string): boolean {
   }
 }
 
-// 批量添加 URL（支持多行/逗号）
+// 批量解析 URL
 function parseMultipleUrls(event: ClipboardEvent) {
   const text = event.clipboardData?.getData('text') || ''
   const lines = text.split(/[\n,]/).map(u => u.trim()).filter(u => u)
@@ -137,8 +156,8 @@ function parseMultipleUrls(event: ClipboardEvent) {
   }
 }
 
-// 开始下载（只添加任务，不启动）
-async function startDownload() {
+// 添加任务（只添加，不启动）
+async function addTasks() {
   if (urls.value.length === 0) {
     errorMessage.value = '请输入视频链接'
     return
@@ -148,7 +167,6 @@ async function startDownload() {
   successMessage.value = ''
 
   try {
-    // 只添加任务到数据库，不启动下载
     await invoke('add_ytdlp_tasks', {
       urls: urls.value,
       outputPath: downloadPath.value,
@@ -158,14 +176,8 @@ async function startDownload() {
   } catch (e) {
     errorMessage.value = '添加任务失败: ' + e
   } finally {
-    // 先关闭弹窗
     closeAddDialog()
-    // 刷新任务列表
-    try {
-      tasks.value = await invoke<YtdlpTask[]>('get_ytdlp_tasks')
-    } catch (e) {
-      console.error('刷新任务列表失败:', e)
-    }
+    await refreshTasks()
   }
 }
 
@@ -173,11 +185,8 @@ async function startDownload() {
 async function stopTask(taskId: string) {
   try {
     await invoke('stop_ytdlp_task', { taskId: taskId })
-    const index = tasks.value.findIndex(t => t.id === taskId)
-    if (index !== -1) {
-      tasks.value[index].status = 'Paused' as YtdlpTaskStatus
-      tasks.value[index].message = '已暂停'
-    }
+    runningTaskIds.value.delete(taskId)
+    await refreshTasks()
   } catch (e) {
     console.error('停止任务失败:', e)
   }
@@ -190,14 +199,23 @@ async function startTask(taskId: string) {
       taskId: taskId,
       outputPath: downloadPath.value,
     })
+    runningTaskIds.value.add(taskId)
   } catch (e) {
     console.error('开始任务失败:', e)
+    runningTaskIds.value.delete(taskId)
+    await refreshTasks()
   }
 }
 
-// 删除任务
+// 删除任务（先停止下载，再删除）
 async function deleteTask(taskId: string) {
   try {
+    // 如果任务正在运行，先停止
+    if (isTaskRunning(taskId)) {
+      await invoke('stop_ytdlp_task', { taskId: taskId })
+      runningTaskIds.value.delete(taskId)
+    }
+    // 从数据库删除任务（会清理临时文件）
     await invoke('delete_ytdlp_task', { taskId: taskId })
     tasks.value = tasks.value.filter(t => t.id !== taskId)
   } catch (e) {
@@ -205,16 +223,11 @@ async function deleteTask(taskId: string) {
   }
 }
 
-// 清理完成的任务
+// 清理已完成的任务
 async function cleanupTasks() {
   try {
     await invoke('cleanup_ytdlp_tasks')
-    tasks.value = tasks.value.filter(t =>
-      t.status === YtdlpTaskStatus.Downloading ||
-      t.status === YtdlpTaskStatus.Pending ||
-      t.status === YtdlpTaskStatus.Queued ||
-      t.status === YtdlpTaskStatus.Paused
-    )
+    await refreshTasks()
   } catch (e) {
     console.error('清理任务失败:', e)
   }
@@ -234,7 +247,7 @@ function getStatusText(status: YtdlpTaskStatus): string {
   return map[status] || status
 }
 
-// 获取状态样式
+// 获取状态样式类
 function getStatusClass(status: YtdlpTaskStatus): string {
   const map: Record<string, string> = {
     'Pending': 'status-pending',
@@ -247,102 +260,258 @@ function getStatusClass(status: YtdlpTaskStatus): string {
   }
   return map[status] || ''
 }
+
+// 打开文件所在文件夹
+async function openFolder(filePath: string) {
+  if (!filePath) {
+    console.error('文件路径为空')
+    return
+  }
+  try {
+    // 如果是文件路径，提取目录
+    const path = filePath.includes('/') || filePath.includes('\\')
+      ? filePath.substring(0, filePath.lastIndexOf('/'))
+      : filePath
+    await invoke('open_path', { path })
+  } catch (e) {
+    console.error('打开文件夹失败:', e)
+  }
+}
+
+// 筛选任务
+const filteredTasks = ref<YtdlpTask[]>([])
+
+// 播放器状态
+const playerVisible = ref(false)
+const playerSrc = ref('')
+const playerTitle = ref('')
+const playerFilePath = ref('')
+
+// 打开播放器播放本地视频
+async function openPlayer(task: YtdlpTask) {
+  if (task.file_path) {
+    // 转换本地路径为 asset:// URL
+    const decodedPath = decodeURIComponent(task.file_path)
+    const assetUrl = convertFileSrc(decodedPath)
+    playerSrc.value = assetUrl
+    playerTitle.value = task.title || '本地视频'
+    playerFilePath.value = task.file_path
+    playerVisible.value = true
+  }
+}
+
+// 关闭播放器
+function handlePlayerClose() {
+  playerVisible.value = false
+  playerSrc.value = ''
+  playerTitle.value = ''
+  playerFilePath.value = ''
+}
+
+watch([searchQuery, statusFilter, () => tasks.value], () => {
+  let result = tasks.value
+
+  // 按状态筛选
+  if (statusFilter.value) {
+    result = result.filter(t => t.status === statusFilter.value)
+  }
+
+  // 按标题搜索
+  if (searchQuery.value.trim()) {
+    const query = searchQuery.value.toLowerCase()
+    result = result.filter(t =>
+      t.title.toLowerCase().includes(query) ||
+      t.url.toLowerCase().includes(query)
+    )
+  }
+
+  filteredTasks.value = result
+}, { immediate: true, deep: true })
 </script>
 
 <template>
   <div class="download-page">
-    <!-- 工具状态 -->
-    <div class="tool-status" :class="{ available: ytdlpAvailable }">
-      <div class="status-icon">
-        <svg v-if="ytdlpAvailable" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polyline points="20 6 9 17 4 12"></polyline>
-        </svg>
-        <svg v-else xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="12" r="10"></circle>
-          <line x1="15" y1="9" x2="9" y2="15"></line>
-          <line x1="9" y1="9" x2="15" y2="15"></line>
-        </svg>
-      </div>
-      <div class="status-text">
-        <span v-if="ytdlpAvailable">yt-dlp 已就绪 ({{ ytdlpVersion }})</span>
-        <span v-else>yt-dlp 未安装或配置错误</span>
-      </div>
-      <button class="add-btn" @click="openAddDialog" :disabled="!ytdlpAvailable">
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <line x1="12" y1="5" x2="12" y2="19"></line>
-          <line x1="5" y1="12" x2="19" y2="12"></line>
-        </svg>
-        添加下载
-      </button>
-    </div>
-
     <!-- 任务列表 -->
-    <div class="tasks-section">
-      <div class="tasks-header">
-        <span class="tasks-count">共 {{ tasks.length }} 个任务</span>
-        <button @click="cleanupTasks" :disabled="tasks.filter(t => t.status === 'Completed' || t.status === 'Failed' || t.status === 'Cancelled').length === 0" class="cleanup-btn">
-          清理已完成
-        </button>
+    <div class="task-section">
+      <div class="section-header">
+        <div class="header-left">
+          <span class="section-title">下载任务 ({{ filteredTasks.length }}/{{ tasks.length }})</span>
+        </div>
+        <div class="header-right">
+          <!-- 搜索框 -->
+          <input
+            type="text"
+            v-model="searchQuery"
+            placeholder="搜索任务名称"
+            class="filter-input"
+          />
+          <!-- 状态筛选 -->
+          <select v-model="statusFilter" class="filter-select">
+            <option value="">全部状态</option>
+            <option value="Pending">等待中</option>
+            <option value="Queued">已队列</option>
+            <option value="Downloading">下载中</option>
+            <option value="Paused">已暂停</option>
+            <option value="Completed">已完成</option>
+            <option value="Failed">失败</option>
+            <option value="Cancelled">已取消</option>
+          </select>
+          <button
+            v-if="tasks.some(t => ['Completed', 'Failed', 'Cancelled'].includes(t.status))"
+            @click="cleanupTasks"
+            class="cleanup-btn"
+          >
+            清理已完成
+          </button>
+          <button
+            class="add-btn-small"
+            @click="openAddDialog"
+            :disabled="!ytdlpAvailable"
+            title="添加下载"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+            添加
+          </button>
+        </div>
       </div>
 
-      <div v-if="tasks.length === 0" class="empty-tasks">
-        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-          <polyline points="7 10 12 15 17 10"></polyline>
-          <line x1="12" y1="15" x2="12" y2="3"></line>
-        </svg>
-        <p>暂无下载任务</p>
+      <!-- 空状态 -->
+      <div v-if="tasks.length === 0" class="empty-state">
+        <div class="empty-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+        </div>
+        <p class="empty-text">暂无下载任务</p>
         <button @click="openAddDialog" class="go-add-btn" :disabled="!ytdlpAvailable">添加下载</button>
       </div>
 
-      <div v-else class="tasks-list">
-        <div v-for="task in tasks" :key="task.id" class="task-item" :class="getStatusClass(task.status)">
-          <div class="task-info">
-            <div class="task-title">{{ task.title || task.url }}</div>
-            <div class="task-meta">
-              <span class="task-status" :class="getStatusClass(task.status)">{{ getStatusText(task.status) }}</span>
-            </div>
+      <!-- 任务表格 -->
+      <div v-else class="task-table">
+        <div class="table-header">
+          <span class="col-name">封面</span>
+          <span class="col-name">名称</span>
+          <span class="col-status">状态</span>
+          <span class="col-action">操作</span>
+        </div>
+
+        <div class="table-body">
+          <div v-if="filteredTasks.length === 0" class="empty-tip">
+            没有找到匹配的任务
           </div>
 
-          <!-- 下载中显示进度条 -->
-          <div v-if="task.status === 'Downloading'" class="task-progress">
-            <div class="progress-bar">
-              <div class="progress-fill" :style="{ width: task.progress + '%' }"></div>
+          <div v-for="task in filteredTasks" :key="task.id" class="table-row" :class="{ running: isTaskRunning(task.id) }">
+            <!-- 封面 -->
+            <div class="col-cover">
+              <img
+                v-if="task.thumbnail"
+                :src="task.thumbnail"
+                :alt="task.title"
+                class="cover-thumbnail"
+              />
+              <div v-else class="cover-placeholder-small">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect>
+                  <line x1="7" y1="2" x2="7" y2="22"></line>
+                  <line x1="17" y1="2" x2="17" y2="22"></line>
+                  <line x1="2" y1="12" x2="22" y2="12"></line>
+                </svg>
+              </div>
             </div>
-            <div class="progress-info">
-              <span class="progress-percent">{{ Math.round(task.progress) }}%</span>
-              <span v-if="task.speed" class="progress-speed">{{ task.speed }}</span>
+
+            <!-- 名称 -->
+            <div class="col-name">
+              <span class="task-title" :title="task.title">{{ task.title || '未知标题' }}</span>
+              <span class="task-url" :title="task.url">{{ task.url }}</span>
+              <!-- 下载中显示进度信息 -->
+              <div v-if="task.status === 'Downloading' && isTaskRunning(task.id)" class="task-progress-info">
+                <span class="progress-percent">{{ Math.round(task.progress) }}%</span>
+                <span v-if="task.speed" class="progress-speed">{{ task.speed }}</span>
+              </div>
+              <!-- 已完成显示文件路径 -->
+              <div v-if="task.status === 'Completed' && task.file_path" class="task-file-info">
+                <span class="file-path">{{ task.file_path }}</span>
+              </div>
             </div>
-          </div>
 
-          <!-- 显示文件路径（如果有） -->
-          <div v-if="task.file_path" class="task-file-path">
-            {{ task.file_path }}
-          </div>
+            <!-- 状态 -->
+            <div class="col-status">
+              <!-- 下载中显示进度条 -->
+              <div v-if="task.status === 'Downloading' && isTaskRunning(task.id)" class="task-progress">
+                <div class="progress-bar">
+                  <div class="progress-fill" :style="{ width: task.progress + '%' }"></div>
+                </div>
+              </div>
+              <!-- 失败状态显示错误提示 -->
+              <div v-else-if="task.status === 'Failed'" class="status-error">
+                <span class="status-tag status-failed">{{ getStatusText(task.status) }}</span>
+                <span class="error-tooltip">{{ task.message || '下载失败' }}</span>
+              </div>
+              <!-- 其他状态显示标签 -->
+              <span v-else :class="['status-tag', getStatusClass(task.status)]">
+                {{ getStatusText(task.status) }}
+              </span>
+            </div>
 
-          <!-- 任务操作 -->
-          <div class="task-actions">
-            <button
-              v-if="task.status === 'Downloading' || task.status === 'Pending' || task.status === 'Queued'"
-              @click="stopTask(task.id)"
-              class="action-btn stop-btn"
-            >
-              停止
-            </button>
-            <button
-              v-if="task.status !== 'Completed'"
-              @click="startTask(task.id)"
-              class="action-btn start-btn"
-            >
-              开始
-            </button>
-            <button
-              v-if="task.status === 'Completed' || task.status === 'Failed' || task.status === 'Cancelled' || task.status === 'Paused'"
-              @click="deleteTask(task.id)"
-              class="action-btn delete-btn"
-            >
-              删除
-            </button>
+            <!-- 操作 -->
+            <div class="col-action">
+              <!-- 下载中显示停止 -->
+              <button
+                v-if="isTaskRunning(task.id)"
+                @click="stopTask(task.id)"
+                class="action-btn stop"
+                title="停止"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                  <rect x="6" y="4" width="4" height="16"></rect>
+                  <rect x="14" y="4" width="4" height="16"></rect>
+                </svg>
+              </button>
+
+              <!-- 已暂停/失败/取消（未运行）显示开始 -->
+              <button
+                v-else-if="canStart(task)"
+                @click="startTask(task.id)"
+                class="action-btn start"
+                title="开始"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                  <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                </svg>
+              </button>
+
+              <!-- 已完成（未运行）显示播放和文件夹 -->
+              <template v-else-if="task.status === 'Completed' && task.file_path">
+                <button @click="openPlayer(task)" class="action-btn play" title="播放">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                  </svg>
+                </button>
+                <button @click="openFolder(task.file_path!)" class="action-btn folder" title="打开文件夹">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                  </svg>
+                </button>
+              </template>
+
+              <!-- 未运行且不是已完成的任务显示删除 -->
+              <button
+                v-if="canDelete(task) && task.status !== 'Completed'"
+                @click="deleteTask(task.id)"
+                class="action-btn delete"
+                title="删除"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="3 6 5 6 21 6"></polyline>
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -352,49 +521,60 @@ function getStatusClass(status: YtdlpTaskStatus): string {
     <div v-if="showAddDialog" class="dialog-overlay" @click.self="closeAddDialog">
       <div class="dialog">
         <div class="dialog-header">
-          <h3>添加下载任务</h3>
-          <button class="close-btn" @click="closeAddDialog">&times;</button>
+          <h3>添加下载</h3>
+          <button @click="closeAddDialog" class="close-btn">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
         </div>
-        <div class="dialog-content">
-          <!-- 错误/成功提示 -->
-          <div v-if="errorMessage" class="alert error">{{ errorMessage }}</div>
-          <div v-if="successMessage" class="alert success">{{ successMessage }}</div>
 
-          <!-- URL 输入区 -->
-          <div class="url-section">
+        <div class="dialog-body">
+          <div class="form-group">
+            <label>下载路径</label>
+            <input type="text" v-model="downloadPath" class="form-input" placeholder="输入下载路径" />
+          </div>
+
+          <div class="form-group">
             <label>视频链接</label>
-            <textarea
-              v-model="urlInput"
-              @paste="parseMultipleUrls($event)"
-              placeholder="粘贴视频链接（支持 YouTube、B站等）&#10;多个链接可以用换行或逗号分隔"
-              rows="4"
-            ></textarea>
-            <div class="url-actions">
-              <button @click="addUrl" :disabled="!urlInput.trim()" class="add-url-btn">
-                添加链接
-              </button>
-              <button @click="urls = []" :disabled="urls.length === 0" class="clear-btn">
-                清空
-              </button>
-            </div>
+            <textarea v-model="urlInput" @paste="parseMultipleUrls" class="form-textarea" placeholder="输入视频链接（支持粘贴多个，换行或逗号分隔）"></textarea>
+          </div>
 
-            <!-- 已添加的链接列表 -->
-            <div v-if="urls.length > 0" class="url-list">
-              <div v-for="(url, index) in urls" :key="index" class="url-item">
-                <span class="url-text">{{ url }}</span>
-                <button @click="removeUrl(index)" class="remove-url">&times;</button>
-              </div>
+          <!-- 已添加的链接列表 -->
+          <div v-if="urls.length > 0" class="url-list">
+            <div v-for="(url, index) in urls" :key="index" class="url-item">
+              <span class="url-text">{{ url }}</span>
+              <button @click="removeUrl(index)" class="remove-url">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+              </button>
             </div>
           </div>
+
+          <div v-if="errorMessage" class="error-message">{{ errorMessage }}</div>
+          <div v-if="successMessage" class="success-message">{{ successMessage }}</div>
         </div>
+
         <div class="dialog-footer">
-          <button @click="closeAddDialog" class="cancel-btn">取消</button>
-          <button @click="startDownload" :disabled="urls.length === 0" class="start-btn">
-            开始下载 ({{ urls.length }} 个)
+          <button @click="closeAddDialog" class="btn btn-secondary">取消</button>
+          <button @click="addTasks" class="btn btn-primary" :disabled="urls.length === 0">
+            添加 {{ urls.length > 0 ? `(${urls.length}个)` : '' }}
           </button>
         </div>
       </div>
     </div>
+
+    <!-- 视频播放器 -->
+    <VideoPlayer
+      v-show="playerVisible"
+      :visible="playerVisible"
+      :src="playerSrc"
+      :title="playerTitle"
+      @close="handlePlayerClose"
+    />
   </div>
 </template>
 
@@ -409,125 +589,154 @@ function getStatusClass(status: YtdlpTaskStatus): string {
   overflow: hidden;
 }
 
-/* 工具状态 */
-.tool-status {
+/* 任务区域 */
+.task-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 20px;
+  background: #fafbfc;
+  border-bottom: 1px solid #f0f0f0;
+  flex-shrink: 0;
+}
+
+.header-left {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 20px;
-  background: #fef2f2;
-  border-bottom: 1px solid #fecaca;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.section-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1a1a2e;
+}
+
+.tool-status {
+  font-size: 12px;
+  color: #94a3b8;
+  padding: 4px 10px;
+  background: #f3f4f6;
+  border-radius: 12px;
+  margin-left: 12px;
 }
 
 .tool-status.available {
-  background: #f0fdf4;
-  border-color: #bbf7d0;
+  background: #dcfce7;
+  color: #16a34a;
 }
 
-.status-icon {
-  display: flex;
-  align-items: center;
-}
-
-.tool-status.available .status-icon {
-  color: #22c55e;
-}
-
-.tool-status:not(.available) .status-icon {
-  color: #ef4444;
-}
-
-.status-text {
-  flex: 1;
-  font-size: 13px;
-  color: #64748b;
-}
-
-.add-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  border: none;
+.filter-input {
+  padding: 6px 12px;
+  border: 1px solid #e8e8e8;
   border-radius: 6px;
   font-size: 13px;
-  font-weight: 500;
+  width: 180px;
+  transition: all 0.2s;
+}
+
+.filter-input:focus {
+  outline: none;
+  border-color: #667eea;
+}
+
+.filter-select {
+  padding: 6px 12px;
+  border: 1px solid #e8e8e8;
+  border-radius: 6px;
+  font-size: 13px;
+  background: white;
   cursor: pointer;
   transition: all 0.2s;
 }
 
-.add-btn:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.35);
-}
-
-.add-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* 任务列表 */
-.tasks-section {
-  flex: 1;
-  overflow-y: auto;
-  padding: 20px;
-}
-
-.tasks-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-}
-
-.tasks-count {
-  font-size: 13px;
-  color: #64748b;
+.filter-select:focus {
+  outline: none;
+  border-color: #667eea;
 }
 
 .cleanup-btn {
   padding: 6px 12px;
-  background: #f1f5f9;
-  color: #64748b;
+  background: transparent;
+  color: #667eea;
+  border: 1px solid #667eea;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.cleanup-btn:hover {
+  background: #667eea;
+  color: white;
+}
+
+.add-btn-small {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+  color: white;
   border: none;
   border-radius: 6px;
   font-size: 12px;
   cursor: pointer;
+  transition: all 0.2s;
 }
 
-.cleanup-btn:disabled {
+.add-btn-small:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+}
+
+.add-btn-small:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-.empty-tasks {
+/* 空状态 */
+.empty-state {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   padding: 60px 20px;
-  color: #94a3b8;
   text-align: center;
+  flex: 1;
 }
 
-.empty-tasks svg {
-  margin-bottom: 12px;
-  opacity: 0.5;
-}
-
-.empty-tasks p {
-  font-size: 14px;
+.empty-icon {
+  color: #334155;
   margin-bottom: 16px;
 }
 
+.empty-text {
+  font-size: 16px;
+  color: #64748b;
+  margin-bottom: 20px;
+}
+
 .go-add-btn {
-  padding: 8px 20px;
-  background: #667eea;
+  padding: 10px 24px;
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
   color: white;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
+  font-size: 14px;
   cursor: pointer;
 }
 
@@ -536,116 +745,155 @@ function getStatusClass(status: YtdlpTaskStatus): string {
   cursor: not-allowed;
 }
 
-.tasks-list {
+/* 表格 */
+.task-table {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  overflow: hidden;
 }
 
-.task-item {
+.table-header {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 12px 16px;
+  padding: 10px 20px;
+  background: #f8f9fa;
+  border-bottom: 1px solid #eee;
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  align-items: center;
+}
+
+.table-body {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.empty-tip {
+  padding: 40px 20px;
+  text-align: center;
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+.table-row {
+  display: flex;
+  align-items: center;
+  padding: 12px 20px;
+  border-bottom: 1px solid #f5f5f5;
+  transition: background 0.15s;
+}
+
+.table-row:hover {
   background: #fafbfc;
-  border-radius: 8px;
-  border-left: 3px solid #e5e7eb;
 }
 
-.task-item.status-downloading {
-  border-left-color: #667eea;
-  background: #f0f4ff;
+.table-row.running {
+  background: #f0f9ff;
 }
 
-.task-item.status-completed {
-  border-left-color: #22c55e;
+/* 封面列 */
+.col-cover {
+  width: 60px;
+  height: 34px;
+  flex-shrink: 0;
+  margin-right: 12px;
+  position: relative;
+  overflow: hidden;
+  border-radius: 4px;
+  background: #f5f5f5;
 }
 
-.task-item.status-failed {
-  border-left-color: #ef4444;
+.cover-thumbnail {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
-.task-item.status-cancelled {
-  border-left-color: #94a3b8;
-}
-
-.task-item.status-paused {
-  border-left-color: #f59e0b;
-  background: #fffbeb;
-}
-
-.task-info {
+.cover-placeholder-small {
+  width: 100%;
+  height: 100%;
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
+  justify-content: center;
+  background: #f8f9fa;
+  color: #cbd5e1;
+}
+
+/* 名称列 */
+.col-name {
+  flex: 1;
+  min-width: 0;
+  padding-right: 16px;
 }
 
 .task-title {
-  font-size: 13px;
+  display: block;
+  font-size: 14px;
   font-weight: 500;
   color: #1a1a2e;
-  word-break: break-all;
-  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.task-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-left: 12px;
-}
-
-.task-status {
-  padding: 2px 8px;
-  border-radius: 4px;
+.task-url {
+  display: block;
   font-size: 11px;
-  font-weight: 500;
+  color: #94a3b8;
+  font-family: monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
 }
 
-.task-status.status-pending,
-.task-status.status-queued {
-  background: #fef3c7;
-  color: #d97706;
+.task-progress-info {
+  margin-top: 4px;
+  display: flex;
+  gap: 12px;
+  font-size: 11px;
 }
 
-.task-status.status-downloading {
-  background: #dbeafe;
-  color: #2563eb;
-}
-
-.task-status.status-completed {
-  background: #dcfce7;
+.progress-percent {
   color: #16a34a;
+  font-weight: 600;
 }
 
-.task-status.status-failed {
-  background: #fee2e2;
-  color: #dc2626;
-}
-
-.task-status.status-cancelled {
-  background: #f1f5f9;
+.progress-speed {
   color: #64748b;
 }
 
-.task-status.status-paused {
-  background: #fef3c7;
-  color: #d97706;
-}
-
-.task-size {
-  font-size: 11px;
-  color: #94a3b8;
-}
-
-.task-file-path {
-  font-size: 11px;
-  color: #94a3b8;
-  word-break: break-all;
+.task-file-info {
   margin-top: 4px;
 }
 
-/* 进度条 */
+.file-path {
+  font-size: 11px;
+  color: #64748b;
+  font-family: monospace;
+  background: #f8f9fa;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.task-error-info {
+  margin-top: 4px;
+}
+
+.error-message {
+  font-size: 11px;
+  color: #dc2626;
+}
+
+/* 状态列 */
+.col-status {
+  width: 120px;
+  padding-right: 16px;
+}
+
 .task-progress {
   width: 100%;
 }
@@ -659,273 +907,317 @@ function getStatusClass(status: YtdlpTaskStatus): string {
 
 .progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, #667eea, #764ba2);
+  background: linear-gradient(90deg, #22c55e, #16a34a);
   border-radius: 3px;
   transition: width 0.3s ease;
 }
 
-.progress-info {
-  display: flex;
-  gap: 12px;
-  margin-top: 4px;
+.status-tag {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 12px;
   font-size: 11px;
-  color: #64748b;
-}
-
-.progress-speed {
-  color: #667eea;
   font-weight: 500;
 }
 
-/* 任务操作 */
-.task-actions {
+.status-pending { background: #fef3c7; color: #d97706; }
+.status-queued { background: #dbeafe; color: #2563eb; }
+.status-downloading { background: #dcfce7; color: #16a34a; }
+.status-paused { background: #fef3c7; color: #d97706; }
+.status-completed { background: #dcfce7; color: #16a34a; }
+.status-failed { background: #fee2e2; color: #dc2626; }
+.status-cancelled { background: #f3f4f6; color: #6b7280; }
+
+/* 失败状态和错误提示 */
+.status-error {
+  position: relative;
+  display: inline-block;
+}
+
+.error-tooltip {
+  visibility: hidden;
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1e293b;
+  color: #fee2e2;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 11px;
+  white-space: nowrap;
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  z-index: 100;
+  margin-bottom: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.status-error:hover .error-tooltip {
+  visibility: visible;
+}
+
+/* 操作列 */
+.col-action {
+  width: 120px;
   display: flex;
-  justify-content: flex-end;
-  gap: 8px;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
 .action-btn {
-  padding: 4px 12px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border: none;
-  border-radius: 4px;
-  font-size: 12px;
+  border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s;
 }
 
-.stop-btn {
+.action-btn.stop {
   background: #fee2e2;
   color: #dc2626;
 }
 
-.stop-btn:hover {
+.action-btn.stop:hover {
   background: #fecaca;
 }
 
-.start-btn {
+.action-btn.start {
   background: #dcfce7;
   color: #16a34a;
 }
 
-.start-btn:hover {
+.action-btn.start:hover {
   background: #bbf7d0;
 }
 
-.cancel-btn {
+.action-btn.play {
+  background: #e0e7ff;
+  color: #4f46e5;
+}
+
+.action-btn.play:hover {
+  background: #c7d2fe;
+}
+
+.action-btn.folder {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+.action-btn.folder:hover {
+  background: #e5e7eb;
+  color: #374151;
+}
+
+.action-btn.delete {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+.action-btn.delete:hover {
   background: #fee2e2;
   color: #dc2626;
 }
 
-.cancel-btn:hover {
-  background: #fecaca;
-}
-
-.redownload-btn {
-  background: #dbeafe;
-  color: #2563eb;
-}
-
-.redownload-btn:hover {
-  background: #bfdbfe;
-}
-
-.delete-btn {
-  background: #fee2e2;
-  color: #dc2626;
-}
-
-.delete-btn:hover {
-  background: #fecaca;
-}
-
-/* 弹窗 */
+/* 弹窗样式 */
 .dialog-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
+  backdrop-filter: blur(4px);
 }
 
 .dialog {
-  background: white;
-  border-radius: 12px;
-  width: 500px;
-  max-width: 90vw;
-  max-height: 80vh;
-  display: flex;
-  flex-direction: column;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+  width: 90%;
+  max-width: 500px;
+  background: #1e293b;
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
 }
 
 .dialog-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 20px;
-  border-bottom: 1px solid #f0f0f0;
+  padding: 20px 24px;
+  border-bottom: 1px solid #334155;
 }
 
 .dialog-header h3 {
-  font-size: 16px;
-  font-weight: 600;
-  color: #1a1a2e;
+  margin: 0;
+  font-size: 18px;
+  color: #f1f5f9;
 }
 
 .close-btn {
-  background: none;
+  background: transparent;
   border: none;
-  font-size: 24px;
-  color: #94a3b8;
+  color: #64748b;
   cursor: pointer;
-  line-height: 1;
+  padding: 4px;
+  border-radius: 4px;
 }
 
 .close-btn:hover {
-  color: #1a1a2e;
+  color: #f1f5f9;
+  background: #334155;
 }
 
-.dialog-content {
-  flex: 1;
+.dialog-body {
+  padding: 24px;
+}
+
+.form-group {
+  margin-bottom: 20px;
+}
+
+.form-group label {
+  display: block;
+  font-size: 14px;
+  color: #94a3b8;
+  margin-bottom: 8px;
+}
+
+.form-input {
+  width: 100%;
+  padding: 12px 16px;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  color: #f1f5f9;
+  font-size: 14px;
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: #6366f1;
+}
+
+.form-textarea {
+  width: 100%;
+  height: 100px;
+  padding: 12px 16px;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  color: #f1f5f9;
+  font-size: 14px;
+  resize: vertical;
+}
+
+.form-textarea:focus {
+  outline: none;
+  border-color: #6366f1;
+}
+
+.url-list {
+  max-height: 150px;
   overflow-y: auto;
-  padding: 20px;
+  margin-bottom: 16px;
+}
+
+.url-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: #0f172a;
+  border-radius: 6px;
+  margin-bottom: 8px;
+}
+
+.url-text {
+  font-size: 12px;
+  color: #94a3b8;
+  word-break: break-all;
+  flex: 1;
+}
+
+.remove-url {
+  background: transparent;
+  border: none;
+  color: #64748b;
+  cursor: pointer;
+  padding: 4px;
+  margin-left: 8px;
+}
+
+.remove-url:hover {
+  color: #ef4444;
+}
+
+.error-message {
+  padding: 12px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 8px;
+  color: #ef4444;
+  font-size: 14px;
+  margin-bottom: 16px;
+}
+
+.success-message {
+  padding: 12px;
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  border-radius: 8px;
+  color: #22c55e;
+  font-size: 14px;
+  margin-bottom: 16px;
 }
 
 .dialog-footer {
   display: flex;
   justify-content: flex-end;
   gap: 12px;
-  padding: 16px 20px;
-  border-top: 1px solid #f0f0f0;
+  padding: 16px 24px;
+  border-top: 1px solid #334155;
 }
 
-.dialog-footer .cancel-btn {
-  background: #f1f5f9;
-  color: #64748b;
-  padding: 8px 16px;
-  border-radius: 6px;
-}
-
-.dialog-footer .start-btn {
-  padding: 8px 20px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
+.btn {
+  padding: 10px 20px;
   border: none;
-  border-radius: 6px;
-  font-size: 13px;
+  border-radius: 8px;
+  font-size: 14px;
   font-weight: 500;
   cursor: pointer;
+  transition: all 0.2s;
 }
 
-.dialog-footer .start-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* 弹窗内的表单 */
-.alert {
-  padding: 12px 16px;
-  border-radius: 8px;
-  margin-bottom: 16px;
-  font-size: 13px;
-}
-
-.alert.error {
-  background: #fef2f2;
-  color: #dc2626;
-  border: 1px solid #fecaca;
-}
-
-.alert.success {
-  background: #f0fdf4;
-  color: #16a34a;
-  border: 1px solid #bbf7d0;
-}
-
-.url-section {
-  margin-bottom: 0;
-}
-
-.url-section label {
-  display: block;
-  font-size: 13px;
-  font-weight: 500;
-  color: #374151;
-  margin-bottom: 8px;
-}
-
-.url-section textarea {
-  width: 100%;
-  padding: 12px;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  font-size: 13px;
-  resize: vertical;
-  font-family: inherit;
-}
-
-.url-section textarea:focus {
-  outline: none;
-  border-color: #667eea;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-}
-
-.url-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 8px;
-}
-
-.add-url-btn {
-  padding: 8px 16px;
-  background: #667eea;
-  color: white;
-  border: none;
-  border-radius: 6px;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.add-url-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.url-list {
-  margin-top: 12px;
-}
-
-.url-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 12px;
-  background: #f8fafc;
-  border-radius: 6px;
-  margin-bottom: 4px;
-}
-
-.url-text {
-  font-size: 12px;
-  color: #64748b;
-  word-break: break-all;
-}
-
-.remove-url {
-  padding: 4px 8px;
+.btn-secondary {
   background: transparent;
-  border: none;
   color: #94a3b8;
-  cursor: pointer;
-  font-size: 16px;
+  border: 1px solid #334155;
 }
 
-.remove-url:hover {
-  color: #ef4444;
+.btn-secondary:hover {
+  background: #334155;
+  color: #f1f5f9;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+  color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 </style>

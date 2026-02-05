@@ -105,6 +105,7 @@ pub fn run() {
                 commands::clear_downloaded,
                 commands::check_ffmpeg,
                 commands::get_websites,
+                commands::get_website_by_name,
                 commands::save_website,
                 commands::delete_website,
                 commands::set_default_website,
@@ -124,6 +125,7 @@ pub fn run() {
                 commands::stop_ytdlp_task,
                 commands::get_ytdlp_tasks,
                 commands::cleanup_ytdlp_tasks,
+                commands::open_path,
             ]);
     }
 

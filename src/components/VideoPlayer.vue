@@ -1,39 +1,22 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch, nextTick, onBeforeUnmount } from 'vue'
-import { invoke } from '@tauri-apps/api/core'
 import Artplayer from 'artplayer'
 import Hls from 'hls.js'
-
-interface VideoItem {
-  id: string
-  name: string
-  m3u8_url: string
-  status: string
-  created_at: string
-  downloaded_at?: string | null
-  scrape_id: string
-  website_name: string
-}
 
 interface Props {
   visible: boolean
   src: string
   title: string
-  playlist?: VideoItem[]
-  currentIndex?: number
-  videoId?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  playlist: () => [],
-  currentIndex: 0,
-  videoId: ''
+  visible: false,
+  src: '',
+  title: ''
 })
 
 const emit = defineEmits<{
   close: []
-  'play-next': [nextIndex: number]
-  'delete-current': []
 }>()
 
 const containerRef = ref<HTMLDivElement | null>(null)
@@ -42,27 +25,21 @@ const hlsRef = ref<Hls | null>(null)
 const isLoading = ref(true)
 const error = ref<string | null>(null)
 
-// 计算是否有下一个视频
-const hasNextVideo = ref(false)
+// 可拖拽状态
+const playerPosition = ref({ x: 0, y: 0 })
+const playerSize = ref({ width: 0, height: 0 })
+const isDragging = ref(false)
+const dragOffset = ref({ x: 0, y: 0 })
 
-function updateHasNextVideo() {
-  hasNextVideo.value = props.playlist.length > 0 && props.currentIndex < props.playlist.length - 1
-}
+// 全屏恢复状态
+const savedPosition = ref({ x: 0, y: 0 })
+const savedSize = ref({ width: 0, height: 0 })
+const isFullscreen = ref(false)
 
-// 播放下一个视频
-function playNextVideo() {
-  if (hasNextVideo.value) {
-    const nextIndex = props.currentIndex + 1
-    emit('play-next', nextIndex)
-  }
-}
+// 防止重复创建
+const isCreating = ref(false)
 
-// 删除当前视频
-function deleteCurrentVideo() {
-  emit('delete-current')
-}
-
-// 根据窗口大小计算初始尺寸 (窗口的 80% 宽，16:9 比例)
+// 根据窗口大小计算初始尺寸
 function getInitialSize() {
   const width = Math.min(900, Math.floor(window.innerWidth * 0.8))
   const height = Math.floor(width * 9 / 16)
@@ -77,17 +54,6 @@ function getCenteredPosition(width: number, height: number) {
   }
 }
 
-// 可拖拽状态
-const playerPosition = ref({ x: 0, y: 0 })
-const playerSize = ref({ width: 0, height: 0 })
-const isDragging = ref(false)
-const dragOffset = ref({ x: 0, y: 0 })
-
-// 全屏恢复状态
-const savedPosition = ref({ x: 0, y: 0 })
-const savedSize = ref({ width: 0, height: 0 })
-const isFullscreen = ref(false)
-
 // 初始化播放器位置和大小
 function initPlayerPosition() {
   const size = getInitialSize()
@@ -95,66 +61,46 @@ function initPlayerPosition() {
   playerPosition.value = getCenteredPosition(size.width, size.height)
 }
 
-// 从 URL 中提取 token 参数
-function extractUrlToken(url: string): string | null {
-  try {
-    const urlObj = new URL(url)
-    const token = urlObj.searchParams.get('token')
-    return token
-  } catch {
-    return null
+// 开始拖拽
+function startDrag(event: MouseEvent) {
+  if (isFullscreen.value) return
+  isDragging.value = true
+  dragOffset.value = {
+    x: event.clientX - playerPosition.value.x,
+    y: event.clientY - playerPosition.value.y
+  }
+  document.addEventListener('mousemove', onDrag)
+  document.addEventListener('mouseup', stopDrag)
+}
+
+function onDrag(event: MouseEvent) {
+  if (!isDragging.value) return
+  playerPosition.value = {
+    x: event.clientX - dragOffset.value.x,
+    y: event.clientY - dragOffset.value.y
   }
 }
 
-// 使用 localStorage 中的 token 更新 URL
-function updateUrlToken(url: string, localStorageToken: string): string {
-  const urlToken = extractUrlToken(url)
-  const urlObj = new URL(url)
-
-  if (urlToken !== localStorageToken) {
-    urlObj.searchParams.set('token', localStorageToken)
-    console.log('[VideoPlayer] Token 已更新')
-  } else {
-    console.log('[VideoPlayer] Token 无需更新')
-  }
-
-  return urlObj.toString()
-}
-
-// 获取网站配置中的 localStorage token
-async function getLocalStorageToken(): Promise<string | null> {
-  try {
-    const websites = await invoke<any[]>('get_websites')
-    if (!websites || websites.length === 0) return null
-
-    const defaultWebsite = websites.find((w: any) => w.is_default) || websites[0]
-    if (!defaultWebsite?.local_storage) return null
-
-    // 直接查找 key = "token" 的项
-    const tokenItem = defaultWebsite.local_storage.find((item: any) => item.key === 'token')
-
-    return tokenItem?.value || null
-  } catch (e) {
-    console.error('[VideoPlayer] 获取 localStorage token 失败:', e)
-    return null
-  }
+function stopDrag() {
+  isDragging.value = false
+  document.removeEventListener('mousemove', onDrag)
+  document.removeEventListener('mouseup', stopDrag)
 }
 
 // 创建 ArtPlayer 实例
 async function createPlayer() {
   if (!containerRef.value || !props.src) return
 
+  console.log('[VideoPlayer] 创建播放器:', props.src)
+
   // 销毁旧的播放器
   destroyPlayer()
+  await new Promise(resolve => setTimeout(resolve, 100))
 
-  // 获取 localStorage 中的 token 并更新 URL
-  const localStorageToken = await getLocalStorageToken()
-  let currentUrl = props.src
+  const currentUrl = props.src
+  console.log('[VideoPlayer] 使用 URL:', currentUrl)
 
-  if (localStorageToken) {
-    currentUrl = updateUrlToken(props.src, localStorageToken)
-  }
-
+  // 假设传入的 URL 已经是正确格式（asset:// 或 http://）
   const isM3U8 = currentUrl.endsWith('.m3u8') || currentUrl.includes('.m3u8')
 
   const art = new Artplayer({
@@ -180,20 +126,19 @@ async function createPlayer() {
     lang: 'zh-cn',
     theme: '#1a1a2e',
     moreVideoAttr: {
-      crossOrigin: 'anonymous',
+      crossOrigin: 'anonymous'
     },
   }) as Artplayer
 
-  // 设置标题
   art.title = props.title
 
   // HLS 特殊处理
   if (isM3U8 && Hls.isSupported()) {
     const hls = new Hls({
-      enableWorker: false, // 关闭 worker 以降低CPU占用
+      enableWorker: false,
       lowLatencyMode: false,
       backBufferLength: 90,
-      maxBufferLength: 30, // 减少缓冲长度
+      maxBufferLength: 30,
       maxMaxBufferLength: 60,
     })
     hlsRef.value = hls
@@ -246,13 +191,11 @@ async function createPlayer() {
   art.on('fullscreen', (state) => {
     isFullscreen.value = state
     if (state) {
-      // 进入全屏
       savedPosition.value = { ...playerPosition.value }
       savedSize.value = { ...playerSize.value }
       playerPosition.value = { x: 0, y: 0 }
       playerSize.value = { width: window.innerWidth, height: window.innerHeight }
     } else {
-      // 退出全屏
       playerPosition.value = { ...savedPosition.value }
       playerSize.value = { ...savedSize.value }
       isFullscreen.value = false
@@ -264,12 +207,10 @@ async function createPlayer() {
 
 // 销毁播放器
 function destroyPlayer() {
-  // 先销毁 HLS 实例
   if (hlsRef.value) {
     hlsRef.value.destroy()
     hlsRef.value = null
   }
-  // 再销毁 ArtPlayer
   if (artRef.value) {
     artRef.value.destroy()
     artRef.value = null
@@ -282,37 +223,8 @@ function handleClose() {
   emit('close')
 }
 
-// 开始拖拽
-function startDrag(event: MouseEvent) {
-  if (isFullscreen.value) return
-  isDragging.value = true
-  dragOffset.value = {
-    x: event.clientX - playerPosition.value.x,
-    y: event.clientY - playerPosition.value.y
-  }
-  document.addEventListener('mousemove', onDrag)
-  document.addEventListener('mouseup', stopDrag)
-}
-
-// 拖拽中
-function onDrag(event: MouseEvent) {
-  if (!isDragging.value) return
-  playerPosition.value = {
-    x: event.clientX - dragOffset.value.x,
-    y: event.clientY - dragOffset.value.y
-  }
-}
-
-// 停止拖拽
-function stopDrag() {
-  isDragging.value = false
-  document.removeEventListener('mousemove', onDrag)
-  document.removeEventListener('mouseup', stopDrag)
-}
-
 onMounted(() => {
   initPlayerPosition()
-  updateHasNextVideo()
 })
 
 onBeforeUnmount(() => {
@@ -325,25 +237,32 @@ onUnmounted(() => {
 
 watch(() => props.visible, async (visible) => {
   if (visible) {
-    initPlayerPosition()
-    updateHasNextVideo()
-    await nextTick()
-    await new Promise(resolve => setTimeout(resolve, 50))
-    await createPlayer()
+    if (isCreating.value) return
+    isCreating.value = true
+    try {
+      initPlayerPosition()
+      await nextTick()
+      await new Promise(resolve => setTimeout(resolve, 100))
+      await createPlayer()
+    } finally {
+      isCreating.value = false
+    }
   } else {
     destroyPlayer()
   }
 })
 
-watch(() => [props.playlist, props.currentIndex], () => {
-  updateHasNextVideo()
-}, { deep: true })
-
 watch(() => props.src, async (newSrc) => {
   if (props.visible && newSrc) {
-    await nextTick()
-    await new Promise(resolve => setTimeout(resolve, 50))
-    await createPlayer()
+    if (isCreating.value) return
+    isCreating.value = true
+    try {
+      await nextTick()
+      await new Promise(resolve => setTimeout(resolve, 100))
+      await createPlayer()
+    } finally {
+      isCreating.value = false
+    }
   }
 })
 </script>
@@ -361,38 +280,9 @@ watch(() => props.src, async (newSrc) => {
           height: playerSize.height + 'px'
         }"
       >
-        <!-- 拖拽标题栏（非全屏时显示，悬停显示） -->
         <div v-if="!isFullscreen" class="player-header" @mousedown="startDrag">
           <span class="player-title">{{ title }}</span>
           <div class="header-actions">
-            <!-- 删除当前视频按钮 -->
-            <button
-              class="action-btn delete-btn"
-              @click.stop="deleteCurrentVideo"
-              title="删除当前视频"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="3 6 5 6 21 6"></polyline>
-                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                <line x1="10" y1="11" x2="10" y2="17"></line>
-                <line x1="14" y1="11" x2="14" y2="17"></line>
-              </svg>
-            </button>
-            <!-- 播放下一个按钮 -->
-            <button
-              v-if="hasNextVideo"
-              class="action-btn next-btn"
-              @click.stop="playNextVideo"
-              title="播放下一个"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <polygon points="5 3 19 12 5 21 5 3"></polygon>
-                <line x1="19" y1="12" x2="9" y2="12"></line>
-                <line x1="19" y1="12" x2="9" y2="5"></line>
-                <line x1="19" y1="12" x2="9" y2="19"></line>
-              </svg>
-              <span class="next-text">下一个</span>
-            </button>
             <button class="close-btn" @click="handleClose" title="关闭">
               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -402,10 +292,8 @@ watch(() => props.src, async (newSrc) => {
           </div>
         </div>
 
-        <!-- ArtPlayer 容器 -->
         <div ref="containerRef" class="artplayer-container"></div>
 
-        <!-- 错误提示 -->
         <div v-if="error" class="error-overlay">
           <span>{{ error }}</span>
         </div>
@@ -444,7 +332,6 @@ watch(() => props.src, async (newSrc) => {
   border-radius: 0;
 }
 
-/* 标题栏默认隐藏，鼠标悬停显示 */
 .player-header {
   position: absolute;
   top: 0;
@@ -480,49 +367,6 @@ watch(() => props.src, async (newSrc) => {
   display: flex;
   align-items: center;
   gap: 8px;
-}
-
-.action-btn {
-  padding: 6px 12px;
-  background: transparent;
-  border: none;
-  color: #fff;
-  cursor: pointer;
-  border-radius: 4px;
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.player-container:hover .action-btn {
-  opacity: 1;
-}
-
-.action-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-}
-
-.next-btn {
-  background: rgba(102, 126, 234, 0.2);
-  border: 1px solid rgba(102, 126, 234, 0.5);
-}
-
-.next-btn:hover {
-  background: rgba(102, 126, 234, 0.4);
-}
-
-.delete-btn {
-  background: rgba(239, 68, 68, 0.2);
-  border: 1px solid rgba(239, 68, 68, 0.5);
-}
-
-.delete-btn:hover {
-  background: rgba(239, 68, 68, 0.4);
-}
-
-.next-text {
-  font-size: 12px;
 }
 
 .close-btn {
@@ -569,7 +413,6 @@ watch(() => props.src, async (newSrc) => {
   font-size: 14px;
 }
 
-/* 过渡动画 */
 .fade-enter-active,
 .fade-leave-active {
   transition: opacity 0.2s ease;
@@ -580,46 +423,10 @@ watch(() => props.src, async (newSrc) => {
   opacity: 0;
 }
 
-/* ArtPlayer 自定义样式覆盖 */
-:deep(.artplayer) {
-  --art-theme: #1a1a2e;
-  --art-primary: #667eea;
-}
-
-/* 修复播放按钮显示 */
-:deep(.art-icon-play svg),
-:deep(.art-icon-pause svg),
-:deep(.art-icon-fullscreen svg),
-:deep(.art-icon-fullscreenWeb svg),
-:deep(.art-icon-settings svg),
-:deep(.art-icon-zoomin svg),
-:deep(.art-icon-zoomout svg),
-:deep(.art-icon-volume svg),
-:deep(.art-icon-volumeClose svg),
-:deep(.art-icon-speed svg),
-:deep(.art-icon-aspactRatio svg),
-:deep(.art-icon-pip svg),
-:deep(.art-icon-loop svg),
-:deep(.art-icon-flipped svg) {
-  fill: white !important;
-  stroke: white !important;
-}
-
-/* 控制栏按钮颜色 */
-:deep(.art-control-btn) {
-  color: white !important;
-}
-
-/* 进度条颜色 */
-:deep(.art-progress-loaded) {
-  background: rgba(255, 255, 255, 0.3) !important;
-}
-
 :deep(.art-progress-played) {
   background: #667eea !important;
 }
 
-/* 时间文字颜色 */
 :deep(.art-time) {
   color: white !important;
 }

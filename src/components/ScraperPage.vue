@@ -230,6 +230,52 @@ async function loadWebsites() {
   }
 }
 
+// 从URL中提取token参数
+function extractUrlToken(url: string): string | null {
+  try {
+    const parsed = new URL(url)
+    const params = new URLSearchParams(parsed.search)
+    return params.get('token')
+  } catch {
+    return null
+  }
+}
+
+// 替换URL中的token
+function replaceUrlToken(url: string, newToken: string): string {
+  try {
+    const parsed = new URL(url)
+    const params = new URLSearchParams(parsed.search)
+    params.set('token', newToken)
+    parsed.search = params.toString()
+    return parsed.toString()
+  } catch {
+    return url
+  }
+}
+
+// 替换视频URL中的token（根据视频的website_name获取对应网站的token）
+async function replaceVideoToken(video: VideoItem, url: string): Promise<string> {
+  if (!video.website_name) return url
+
+  try {
+    // 根据视频的website_name获取对应网站的配置
+    const website = await invoke<Website | null>('get_website_by_name', { name: video.website_name })
+    if (website && website.local_storage) {
+      const tokenItem = website.local_storage.find((item: { key: string }) => item.key === 'token')
+      if (tokenItem) {
+        const urlToken = extractUrlToken(url)
+        if (urlToken !== tokenItem.value) {
+          return replaceUrlToken(url, tokenItem.value)
+        }
+      }
+    }
+  } catch (e) {
+    console.error('获取网站配置失败:', e)
+  }
+  return url
+}
+
 async function loadMore() {
   if (isLoadingMore.value || !hasMore.value) return
 
@@ -526,20 +572,27 @@ function isDownloading(video: VideoItem): boolean {
 
 // 打开播放器
 function openPlayer(video: VideoItem) {
-  playerSrc.value = video.m3u8_url
-  playerTitle.value = video.name
-  playerVideoId.value = video.id
-  // 设置播放列表和当前索引
-  playerPlaylist.value = videos.value
-  currentVideoIndex.value = videos.value.findIndex(v => v.id === video.id)
-  playerVisible.value = true
+  let url = video.m3u8_url
+
+  // 替换token - 根据视频的website_name获取对应网站的token
+  replaceVideoToken(video, url).then(finalUrl => {
+    playerSrc.value = finalUrl
+    playerTitle.value = video.name
+    playerVideoId.value = video.id
+    // 设置播放列表和当前索引
+    playerPlaylist.value = videos.value
+    currentVideoIndex.value = videos.value.findIndex(v => v.id === video.id)
+    playerVisible.value = true
+  })
 }
+
 
 // 处理播放下一个视频
 async function handlePlayNext(nextIndex: number) {
   if (nextIndex >= 0 && nextIndex < playerPlaylist.value.length) {
     const nextVideo = playerPlaylist.value[nextIndex]
-    playerSrc.value = nextVideo.m3u8_url
+    const finalUrl = await replaceVideoToken(nextVideo, nextVideo.m3u8_url)
+    playerSrc.value = finalUrl
     playerTitle.value = nextVideo.name
     playerVideoId.value = nextVideo.id
     currentVideoIndex.value = nextIndex
@@ -570,7 +623,10 @@ async function handleDeleteCurrent() {
         ? playerPlaylist.value.length - 1
         : currentVideoIndex.value
       const nextVideo = playerPlaylist.value[nextIndex]
-      playerSrc.value = nextVideo.m3u8_url
+
+      // 替换token
+      const finalUrl = await replaceVideoToken(nextVideo, nextVideo.m3u8_url)
+      playerSrc.value = finalUrl
       playerTitle.value = nextVideo.name
       playerVideoId.value = nextVideo.id
       currentVideoIndex.value = nextIndex
