@@ -1,10 +1,11 @@
 use crate::models::{YtdlpConfig, YtdlpResult, YtdlpTask, YtdlpTaskStatus};
-use crate::services::{get_ytdlp_path, get_ffmpeg_path, get_ffprobe_path};
+use crate::services::{get_sidecar_path, get_sidecar_bin_dir};
 use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::Mutex;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+use tauri::AppHandle;
 
 /// yt-dlp 任务存储
 static YTDLP_TASKS: std::sync::LazyLock<Mutex<Vec<YtdlpTask>>> =
@@ -83,9 +84,7 @@ fn parse_progress(output: &str) -> (u8, String, String) {
 }
 
 /// 获取视频信息（不下载）- 使用 --print 模板简洁输出
-pub async fn get_video_info(url: &str, quality: u32) -> Result<YtdlpTask, String> {
-    let ytdlp_path = get_ytdlp_path();
-
+pub async fn get_video_info(app_handle: &AppHandle, url: &str, quality: u32) -> Result<YtdlpTask, String> {
     // 构建格式字符串: bestvideo[height<=quality]+bestaudio/best
     let format_str = build_format_string(quality);
 
@@ -96,13 +95,15 @@ pub async fn get_video_info(url: &str, quality: u32) -> Result<YtdlpTask, String
         "chrome".to_string(), // 或者 "safari", "edge", "firefox"
         "--impersonate".to_string(),
         "chrome".to_string(),
-        "-f".to_string(), 
+        "-f".to_string(),
         format_str.to_string(),
-        "--print".to_string(), 
+        "--print".to_string(),
         "%(title)s|%(resolution)s|%(filesize_approx)s B|%(ext)s".to_string(),
         url.to_string(),
     ];
 
+    // 使用 Tauri Sidecar API 获取 yt-dlp 路径
+    let ytdlp_path = get_sidecar_path(app_handle, "yt-dlp")?;
     let output = Command::new(&ytdlp_path)
         .args(&args)
         .stdout(Stdio::piped())
@@ -170,26 +171,9 @@ fn format_file_size(bytes: u64) -> String {
     }
 }
 
-/// 创建软链接的跨平台辅助函数
-fn create_symlink(src: &Path, dst: &Path) -> std::io::Result<()> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::symlink;
-        symlink(src, dst)
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::symlink_file;
-        symlink_file(src, dst)
-    }
-    #[cfg(not(any(unix, windows)))]
-    {
-        Err(std::io::Error::new(std::io::ErrorKind::Other, "不支持的操作系统"))
-    }
-}
-
 /// 下载单个视频（支持断点续传）
 pub async fn download_video_with_continue(
+    app_handle: &AppHandle,
     url: &str,
     output_path: &str,
     task_id: &str,
@@ -197,33 +181,20 @@ pub async fn download_video_with_continue(
     config: &YtdlpConfig,
     mut progress_callback: impl FnMut(YtdlpTask) + Send,
 ) -> Result<YtdlpResult, String> {
-    let ytdlp_path = get_ytdlp_path();
-    let ffmpeg_sidecar = get_ffmpeg_path();
-    let ffprobe_sidecar = get_ffprobe_path();
+    // 获取 ffmpeg sidecar 所在目录，用于 --ffmpeg-location
+    let ffmpeg_bin_dir = get_sidecar_bin_dir(app_handle, "ffmpeg")?;
+    tracing::info!("[yt-dlp] ffmpeg bin dir: {}", &ffmpeg_bin_dir.to_string_lossy().to_string());
 
-    let bin_dir = ffmpeg_sidecar.parent().ok_or("无法获取二进制目录")?;
+    // 检查 ffmpeg 是否可用
+    let ffmpeg_path = get_sidecar_path(app_handle, "ffmpeg")?;
+    let ffmpeg_check = Command::new(&ffmpeg_path)
+        .args(["-version"])
+        .output()
+        .await
+        .map_err(|e| format!("执行 ffmpeg 失败: {}", e))?;
 
-    // --- 创建软链接：yt-dlp 只认 "ffmpeg" 和 "ffprobe" 这两个名字 ---
-    // 在 bin 目录下创建标准名字的软链接（仅当不存在时）
-    let ffmpeg_std = bin_dir.join("ffmpeg");
-    let ffprobe_std = bin_dir.join("ffprobe");
-
-    // 检测并创建 ffmpeg 软链接
-    if !ffmpeg_std.exists() {
-        if let Err(e) = create_symlink(&ffmpeg_sidecar, &ffmpeg_std) {
-            tracing::warn!("[yt-dlp] 创建 ffmpeg 软链接失败: {}", e);
-        } else {
-            tracing::info!("[yt-dlp] 已创建 ffmpeg 软链接");
-        }
-    }
-
-    // 检测并创建 ffprobe 软链接
-    if !ffprobe_std.exists() {
-        if let Err(e) = create_symlink(&ffprobe_sidecar, &ffprobe_std) {
-            tracing::warn!("[yt-dlp] 创建 ffprobe 软链接失败: {}", e);
-        } else {
-            tracing::info!("[yt-dlp] 已创建 ffprobe 软链接");
-        }
+    if !ffmpeg_check.status.success() {
+        return Err("ffmpeg 不可用".to_string());
     }
 
     // 重要：在启动新下载前，先确保杀死可能存在的旧进程
@@ -250,10 +221,6 @@ pub async fn download_video_with_continue(
     }
     drop(old_pids);
 
-    // 获取 bin 目录路径，传入 --ffmpeg-location
-    // let ffmpeg_location = ffmpeg_path.to_string_lossy().to_string();
-    // tracing::info!("[yt-dlp] ffprobe 路径: {:?}", ffprobe_path);
-
     // 使用视频标题作为文件名模板，yt-dlp 会自动处理所有逻辑
     // 重要：不要使用 task_id 作为文件名，让 yt-dlp 使用标题
     // 去掉 --no-overwrites，让 yt-dlp 自己决定是否覆盖
@@ -272,9 +239,9 @@ pub async fn download_video_with_continue(
         "--progress".to_string(),
         "--progress-template".to_string(),
         "[download:%(progress._percent_str)s][%(progress._speed_str)s][%(progress._eta_str)s]".to_string(),
-        // 传递完整的 ffmpeg 路径，yt-dlp 会直接使用
+        // 传递 ffmpeg 所在目录
         "--ffmpeg-location".to_string(),
-        bin_dir.to_string_lossy().to_string(),
+        ffmpeg_bin_dir.to_string_lossy().to_string(),
         "--postprocessor-args".to_string(), "ffmpeg:-movflags +faststart".to_string(),
         "-o".to_string(),
         output_template,
@@ -328,8 +295,7 @@ pub async fn download_video_with_continue(
     args.push(url.to_string());
 
     // 打印完整命令用于调试
-    let full_command = format!("{} {}", ytdlp_path.display(), args.join(" "));
-    tracing::info!("[yt-dlp] 开始下载: {}", full_command);
+    tracing::info!("[yt-dlp] 开始下载: yt-dlp {}", args.join(" "));
 
     // 发送初始状态
     progress_callback(YtdlpTask {
@@ -347,6 +313,10 @@ pub async fn download_video_with_continue(
         file_size: String::new(),
     });
 
+    // 使用 Tauri Sidecar API 获取路径
+    let ytdlp_path = get_sidecar_path(app_handle, "yt-dlp")?;
+
+    tracing::info!("[yt-dlp] 启动 yt-dlp: {}", ytdlp_path.display());
     let mut child = Command::new(&ytdlp_path)
         .args(&args)
         .stdout(Stdio::piped())

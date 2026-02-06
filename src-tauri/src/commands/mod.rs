@@ -9,6 +9,7 @@ use crate::models::{
     AppConfig, DownloadProgress, LocalVideo, ScrapeResult, VideoItem, VideoStatus, Website,
     YtdlpConfig, YtdlpTask, YtdlpTaskStatus,
 };
+use crate::services::get_sidecar_path;
 use std::path::PathBuf;
 
 /// 清理下载临时文件（.part 文件等）
@@ -345,12 +346,13 @@ pub async fn delete_video(db: State<'_, Database>, video_id: String) -> Result<(
 #[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn download_video(
+    app_handle: tauri::AppHandle,
     window: WebviewWindow,
     db: State<'_, Database>,
     video_id: String,
 ) -> Result<(), String> {
     // 复用 batch_download 的逻辑
-    batch_download(window, db, vec![video_id]).await
+    batch_download(app_handle, window, db, vec![video_id]).await
 }
 
 #[cfg(feature = "desktop")]
@@ -361,13 +363,14 @@ pub async fn clear_downloaded(db: State<'_, Database>) -> Result<(), String> {
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
-pub fn check_ffmpeg() -> bool {
-    crate::services::check_ffmpeg()
+pub fn check_ffmpeg(app_handle: tauri::AppHandle) -> bool {
+    crate::services::check_ffmpeg(&app_handle)
 }
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn batch_download(
+    app_handle: tauri::AppHandle,
     window: WebviewWindow,
     db: State<'_, Database>,
     video_ids: Vec<String>,
@@ -453,7 +456,7 @@ pub async fn batch_download(
         }
     });
 
-    let results = batch_download_concurrent(videos_to_download, 3, progress_tx).await;
+    let results = batch_download_concurrent(&app_handle, videos_to_download, 3, progress_tx).await;
 
     for (id, result) in results.iter() {
         if result.is_ok() {
@@ -532,13 +535,14 @@ pub async fn get_videos_by_website(
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
-pub async fn get_video_info(url: String, quality: u32) -> Result<YtdlpTask, String> {
-    crate::services::get_video_info(&url, quality).await
+pub async fn get_video_info(app_handle: tauri::AppHandle, url: String, quality: u32) -> Result<YtdlpTask, String> {
+    crate::services::get_video_info(&app_handle, &url, quality).await
 }
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn add_ytdlp_tasks(
+    app_handle: tauri::AppHandle,
     db: State<'_, Database>,
     urls: Vec<String>,
     quality: u32,
@@ -546,7 +550,7 @@ pub async fn add_ytdlp_tasks(
     // 获取视频信息并创建任务
     let mut tasks = Vec::new();
     for url in &urls {
-        match crate::services::get_video_info(url, quality).await {
+        match crate::services::get_video_info(&app_handle, url, quality).await {
             Ok(task) => {
                 // 创建简化版任务
                 let ytdlp_task = YtdlpTask {
@@ -635,6 +639,7 @@ pub async fn stop_ytdlp_task(task_id: String, db: State<'_, Database>) -> Result
 #[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn start_ytdlp_task(
+    app_handle: tauri::AppHandle,
     window: WebviewWindow,
     db: State<'_, Database>,
     task_id: String,
@@ -701,6 +706,7 @@ pub async fn start_ytdlp_task(
 
     // 执行下载（支持断点续传）
     let result = crate::services::download_video_with_continue(
+        &app_handle,
         &task.url,
         &output_path,
         &task_id,
@@ -838,12 +844,11 @@ pub async fn get_file_stats(path: String) -> Result<(u64, String), String> {
 /// 使用 ffprobe 获取视频信息
 #[cfg(feature = "desktop")]
 #[tauri::command]
-pub async fn get_media_info(path: String) -> Result<(String, String, String), String> {
-    use std::process::Command;
+pub async fn get_media_info(app_handle: tauri::AppHandle, path: String) -> Result<(String, String, String), String> {
+    use tokio::process::Command;
 
-    let ffprobe_path = crate::services::get_ffprobe_path();
-
-    // ffprobe 命令获取视频信息
+    // ffprobe sidecar 命令获取视频信息
+    let ffprobe_path = get_sidecar_path(&app_handle, "ffprobe")?;
     let output = Command::new(&ffprobe_path)
         .args(&[
             "-v", "quiet",
@@ -853,6 +858,7 @@ pub async fn get_media_info(path: String) -> Result<(String, String, String), St
             &path,
         ])
         .output()
+        .await
         .map_err(|e| format!("执行 ffprobe 失败: {}", e))?;
 
     if !output.status.success() {

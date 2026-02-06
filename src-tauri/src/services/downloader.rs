@@ -1,14 +1,15 @@
 use crate::models::DownloadProgress;
-use crate::services::get_ffmpeg_path;
+use crate::services::get_sidecar_path;
 use reqwest;
 use std::fs;
 use std::path::PathBuf;
-use std::process::{Command as StdCommand, Stdio};
+use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use tokio::process::Command;
 use tokio::sync::broadcast;
 use url::Url;
 use futures::stream::{self, StreamExt};
+use tauri::AppHandle;
 
 /// 正在下载的视频ID集合
 pub static DOWNLOADING_VIDEOS: std::sync::LazyLock<Arc<Mutex<Vec<String>>>> =
@@ -29,46 +30,25 @@ pub fn finish_download(video_id: &str) {
 }
 
 /// 检查ffmpeg是否可用
-pub fn check_ffmpeg() -> bool {
-    let ffmpeg_path = get_ffmpeg_path();
-    let output = StdCommand::new(&ffmpeg_path)
-        .arg("-version")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
-    output.is_ok()
+pub fn check_ffmpeg(app_handle: &AppHandle) -> bool {
+    match get_sidecar_path(app_handle, "ffmpeg") {
+        Ok(path) => {
+            std::process::Command::new(&path)
+                .arg("-version")
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false)
+        }
+        Err(_) => false,
+    }
 }
 
-/// 获取ffmpeg路径
-pub fn find_ffmpeg() -> String {
-    let ffmpeg_path = get_ffmpeg_path();
-    if ffmpeg_path.exists() {
-        return ffmpeg_path.to_string_lossy().to_string();
-    }
-
-    // 检查系统 ffmpeg
-    let possible_paths = vec![
-        "/opt/homebrew/bin/ffmpeg",
-        "/usr/local/bin/ffmpeg",
-        "/usr/bin/ffmpeg",
-    ];
-
-    for path in possible_paths {
-        if PathBuf::from(path).exists() {
-            return path.to_string();
-        }
-    }
-
-    // 尝试 which 命令
-    if let Ok(output) = StdCommand::new("which").arg("ffmpeg").output() {
-        if output.status.success() {
-            if let Ok(s) = String::from_utf8(output.stdout) {
-                return s.trim().to_string();
-            }
-        }
-    }
-
-    "ffmpeg".to_string()
+/// 获取ffmpeg sidecar命令（用于执行）
+pub fn get_ffmpeg_command(app_handle: &AppHandle) -> Result<Command, String> {
+    let path = get_sidecar_path(app_handle, "ffmpeg")?;
+    Ok(Command::new(&path))
 }
 
 /// 解析m3u8加密信息
@@ -129,18 +109,18 @@ fn parse_encryption_info(m3u8_content: &str, m3u8_url: &str) -> EncryptionInfo {
 
 /// 下载M3U8视频（支持AES-128加密）
 pub async fn download_m3u8(
+    app_handle: &AppHandle,
     m3u8_url: &str,
     output_path: &str,
     video_id: &str,
     video_name: &str,
     mut progress_callback: impl FnMut(DownloadProgress),
 ) -> Result<(), String> {
-    // 检查ffmpeg
-    if !check_ffmpeg() {
-        return Err("未找到ffmpeg，请先安装: brew install ffmpeg".to_string());
+    // 检查ffmpeg sidecar
+    if !check_ffmpeg(app_handle) {
+        return Err("未找到 ffmpeg，请确保已正确配置 sidecar".to_string());
     }
 
-    let ffmpeg_path = find_ffmpeg();
     let output_dir = PathBuf::from(output_path);
     let _ = fs::create_dir_all(&output_dir);
 
@@ -319,8 +299,8 @@ pub async fn download_m3u8(
         eta: "--:--".to_string(),
     });
 
-    // 使用 tokio::process::Command 异步执行 ffmpeg
-    let output = Command::new(&ffmpeg_path)
+    // 使用 ffmpeg sidecar 执行
+    let output = get_ffmpeg_command(app_handle)?
         .args(&[
             "-y",
             "-protocol_whitelist", "file,http,https,tcp,tls,crypto",
@@ -386,7 +366,7 @@ pub async fn download_m3u8(
                     eta: "--:--".to_string(),
                 });
 
-                let retry_output = Command::new(&ffmpeg_path)
+                let retry_output = get_ffmpeg_command(app_handle)?
                     .args(&[
                         "-y",
                         "-protocol_whitelist", "file,http,https,tcp,tls,crypto",
@@ -432,6 +412,7 @@ pub async fn download_m3u8(
 
 /// 并发批量下载视频
 pub async fn batch_download_concurrent(
+    app_handle: &AppHandle,
     videos: Vec<(String, String, String, PathBuf)>,
     max_concurrent: usize,
     progress_sender: broadcast::Sender<DownloadProgress>,
@@ -461,7 +442,7 @@ pub async fn batch_download_concurrent(
             };
 
             // 执行下载
-            let result = download_m3u8(&m3u8_url, &output_dir.to_string_lossy(), &video_id, &name, progress_callback).await;
+            let result = download_m3u8(app_handle, &m3u8_url, &output_dir.to_string_lossy(), &video_id, &name, progress_callback).await;
 
             // 标记下载完成
             finish_download(&video_id);

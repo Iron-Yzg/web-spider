@@ -16,18 +16,89 @@ pub use db::{Database, PaginatedVideos};
 pub use services::{AppState, AppState as AppStateTrait};
 
 // 初始化 tracing 用于日志输出
+#[cfg(debug_assertions)]
 fn init_tracing() {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
-        .with_thread_ids(true)
-        .with_target(false)
+    use tracing_subscriber::prelude::*;
+
+    // 开发环境：只输出到控制台
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::fmt::layer()
+            .with_thread_ids(true)
+            .with_target(false))
+        .with(tracing_subscriber::filter::LevelFilter::INFO)
         .init();
+
+    tracing::info!("[App] 开发模式启动，日志仅输出到控制台");
+}
+
+/// 清理旧日志文件（保留最近 7 天）
+#[cfg(not(debug_assertions))]
+fn cleanup_old_logs(log_dir: &PathBuf, max_days: u32) {
+    let now = chrono::Utc::now();
+    if let Ok(entries) = std::fs::read_dir(log_dir) {
+        for entry in entries.flatten() {
+            if let Ok(metadata) = entry.metadata() {
+                if let Ok(modified) = metadata.modified() {
+                    let modified_date = chrono::DateTime::<chrono::Utc>::from(modified);
+                    let days_diff = (now.date_naive() - modified_date.date_naive()).num_days();
+                    if days_diff as u32 > max_days {
+                        let _ = std::fs::remove_file(entry.path());
+                        tracing::info!("[App] 清理旧日志: {}", entry.path().display());
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[cfg(not(debug_assertions))]
+fn init_tracing() -> (tracing_appender::non_blocking::WorkerGuard, PathBuf) {
+    use tracing_subscriber::prelude::*;
+
+    // 获取日志目录
+    let log_dir = if let Some(app_data) = dirs::data_dir() {
+        app_data.join("web-spider").join("logs")
+    } else {
+        PathBuf::from("./logs")
+    };
+
+    // 确保日志目录存在
+    let _ = std::fs::create_dir_all(&log_dir);
+
+    // 清理 7 天前的旧日志
+    cleanup_old_logs(&log_dir, 7);
+
+    // 创建文件 appender - 使用更细粒度的滚动（每小时）
+    let file_appender = tracing_appender::rolling::hourly(&log_dir, "web-spider.log");
+    let (non_blocking_file, guard) = tracing_appender::non_blocking(file_appender);
+
+    // 生产环境：同时输出到控制台和文件
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::fmt::layer()
+            .with_thread_ids(true)
+            .with_target(false)
+            .with_writer(non_blocking_file)
+            .with_ansi(false))
+        .with(tracing_subscriber::fmt::layer()
+            .with_thread_ids(true)
+            .with_target(false))
+        .with(tracing_subscriber::filter::LevelFilter::INFO)
+        .init();
+
+    tracing::info!("[App] 生产模式启动，日志输出到控制台和文件");
+
+    (guard, log_dir)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // 初始化 tracing
+    // 初始化 tracing - guard 必须在生产环境保持存活
+    #[cfg(not(debug_assertions))]
+    let (_tracing_guard, _log_dir) = init_tracing();
+
+    #[cfg(debug_assertions)]
     init_tracing();
+
     tracing::info!("[App] 应用启动");
     // 桌面端才需要 AppState（用于爬虫和下载状态管理）
     #[cfg(feature = "desktop")]
@@ -77,6 +148,14 @@ pub fn run() {
 
     // tracing::info!("Using data directory: {:?}", data_dir);
 
+    // 输出日志路径
+    let log_dir = if let Some(app_data) = dirs::data_dir() {
+        app_data.join("web-spider").join("logs")
+    } else {
+        PathBuf::from("./logs")
+    };
+    tracing::info!("[App] 日志文件路径: {}", log_dir.display());
+
     let database = runtime.block_on(async {
         db::Database::new(&data_dir).await.expect("Failed to initialize database")
     });
@@ -85,6 +164,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_shell::init())
         .manage(database);
 
     // 仅桌面端管理 AppState 和爬虫相关命令
