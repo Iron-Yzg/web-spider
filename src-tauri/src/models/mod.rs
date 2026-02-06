@@ -240,3 +240,15 @@ pub struct YtdlpResult {
     pub file_size: u64,
     pub message: String,
 }
+
+/// 本地视频
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalVideo {
+    pub id: String,
+    pub name: String,
+    pub file_path: String,
+    pub file_size: String,
+    pub duration: String,
+    pub resolution: String,
+    pub added_at: chrono::DateTime<chrono::Utc>,
+}

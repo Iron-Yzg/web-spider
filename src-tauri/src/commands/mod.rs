@@ -6,9 +6,10 @@ use tauri_plugin_dialog::DialogExt;
 
 use crate::db::{Database, PaginatedVideos};
 use crate::models::{
-    AppConfig, DownloadProgress, ScrapeResult, VideoItem, VideoStatus, Website,
+    AppConfig, DownloadProgress, LocalVideo, ScrapeResult, VideoItem, VideoStatus, Website,
     YtdlpConfig, YtdlpTask, YtdlpTaskStatus,
 };
+use std::path::PathBuf;
 
 /// 清理下载临时文件（.part 文件等）
 fn clean_temp_files(output_path: &str, title: &str) {
@@ -755,4 +756,172 @@ pub async fn cleanup_ytdlp_tasks(db: State<'_, Database>) -> Result<(), String> 
     // 清理数据库中的任务
     let _ = db.cleanup_ytdlp_tasks().await.map_err(|e| e.to_string())?;
     Ok(())
+}
+
+// ==================== 本地视频管理命令 ====================
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub async fn get_app_data_dir() -> Result<String, String> {
+    // 获取应用数据目录
+    let data_dir = if let Some(home_dir) = dirs::home_dir() {
+        if home_dir.join("Library/Application Support").exists() {
+            home_dir.join("Library/Application Support/web-spider")
+        } else if let Some(data_dir) = dirs::data_dir() {
+            data_dir.join("web-spider")
+        } else {
+            PathBuf::from("./data")
+        }
+    } else if let Some(data_dir) = dirs::data_dir() {
+        data_dir.join("web-spider")
+    } else {
+        PathBuf::from("./data")
+    };
+
+    Ok(data_dir.to_string_lossy().to_string())
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub async fn select_video_files(window: WebviewWindow) -> Result<Option<Vec<String>>, String> {
+    // 使用 file dialog 选择视频文件
+    let result: Option<Vec<tauri_plugin_dialog::FilePath>> = window
+        .dialog()
+        .file()
+        .set_title("选择视频文件")
+        .add_filter("视频文件", &["mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", "m4v", "mpg", "mpeg"])
+        .blocking_pick_files();
+
+    match result {
+        Some(paths) => {
+            let file_paths: Vec<String> = paths.into_iter().map(|p| p.to_string()).collect();
+            Ok(Some(file_paths))
+        }
+        None => Ok(None),
+    }
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub async fn read_local_videos(path: String) -> Result<Vec<LocalVideo>, String> {
+    let content = std::fs::read_to_string(&path)
+        .map_err(|e| format!("读取文件失败: {}", e))?;
+    let data: Vec<LocalVideo> = serde_json::from_str(&content)
+        .map_err(|e| format!("解析JSON失败: {}", e))?;
+    Ok(data)
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub async fn write_local_videos(path: String, data: Vec<LocalVideo>) -> Result<(), String> {
+    let content = serde_json::to_string_pretty(&data)
+        .map_err(|e| format!("序列化JSON失败: {}", e))?;
+    std::fs::write(&path, content)
+        .map_err(|e| format!("写入文件失败: {}", e))?;
+    Ok(())
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub async fn get_file_stats(path: String) -> Result<(u64, String), String> {
+    let metadata = std::fs::metadata(&path)
+        .map_err(|e| format!("获取文件元数据失败: {}", e))?;
+    let size = metadata.len();
+    let modified = if let Ok(modified) = metadata.modified() {
+        format!("{:?}", modified)
+    } else {
+        String::from("unknown")
+    };
+    Ok((size, modified))
+}
+
+/// 使用 ffprobe 获取视频信息
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub async fn get_media_info(path: String) -> Result<(String, String, String), String> {
+    use std::process::Command;
+
+    let ffprobe_path = crate::services::get_ffprobe_path();
+
+    // ffprobe 命令获取视频信息
+    let output = Command::new(&ffprobe_path)
+        .args(&[
+            "-v", "quiet",
+            "-print_format", "json",
+            "-show_format",
+            "-show_streams",
+            &path,
+        ])
+        .output()
+        .map_err(|e| format!("执行 ffprobe 失败: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("ffprobe 失败: {}", stderr));
+    }
+
+    let json_output = String::from_utf8_lossy(&output.stdout);
+
+    // 解析 JSON
+    let json: serde_json::Value = serde_json::from_str(&json_output)
+        .map_err(|e| format!("解析 ffprobe 输出失败: {}", e))?;
+
+    // 提取分辨率
+    let resolution = json.get("streams")
+        .and_then(|v| v.as_array())
+        .and_then(|streams| {
+            streams.iter().find(|s| s.get("codec_type") == Some(&serde_json::json!("video")))
+        })
+        .and_then(|video| {
+            let width = video.get("width").and_then(|w| w.as_u64()).unwrap_or(0);
+            let height = video.get("height").and_then(|h| h.as_u64()).unwrap_or(0);
+            if width > 0 && height > 0 {
+                Some(format!("{}x{}", width, height))
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| "未知".to_string());
+
+    // 提取时长
+    let duration = json.get("format")
+        .and_then(|f| f.get("duration"))
+        .and_then(|d| d.as_str())
+        .map(|d| {
+            // 转换秒为可读格式
+            let secs: f64 = d.parse().unwrap_or(0.0);
+            let hours = (secs as u64) / 3600;
+            let minutes = ((secs as u64) % 3600) / 60;
+            let seconds = (secs as u64) % 60;
+            if hours > 0 {
+                format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
+            } else {
+                format!("{:02}:{:02}", minutes, seconds)
+            }
+        })
+        .unwrap_or_else(|| "未知".to_string());
+
+    // 提取文件大小
+    let file_size = json.get("format")
+        .and_then(|f| f.get("size"))
+        .and_then(|s| s.as_str())
+        .map(|s| {
+            let bytes: u64 = s.parse().unwrap_or(0);
+            format_file_size(bytes)
+        })
+        .unwrap_or_else(|| "未知".to_string());
+
+    Ok((resolution, duration, file_size))
+}
+
+/// 格式化文件大小
+fn format_file_size(bytes: u64) -> String {
+    if bytes == 0 {
+        return "0 B".to_string();
+    }
+    let k = 1024.0;
+    let sizes = ["B", "KB", "MB", "GB", "TB"];
+    let i = (bytes as f64).log(k).floor() as usize;
+    let size = bytes as f64 / k.powi(i as i32);
+    format!("{} {}", size.round() as u64, sizes[i])
 }

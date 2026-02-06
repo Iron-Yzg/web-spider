@@ -3,10 +3,11 @@ import { ref } from 'vue'
 import ScraperView from './views/ScraperView.vue'
 import SettingsView from './views/SettingsView.vue'
 import DownloadView from './views/DownloadView.vue'
+import LocalView from './views/LocalView.vue'
 
-type Tab = 'scraper' | 'download' | 'settings'
+type Tab = 'scraper' | 'download' | 'local' | 'settings'
 
-const currentTab = ref<Tab>('scraper')
+const currentTab = ref<Tab>('local')
 </script>
 
 <template>
@@ -26,6 +27,12 @@ const currentTab = ref<Tab>('scraper')
         >
           下载视频
         </button>
+        <button
+          :class="['nav-tab', { active: currentTab === 'local' }]"
+          @click="currentTab = 'local'"
+        >
+          本地管理
+        </button>
       </div>
 
       <!-- 右侧设置按钮 -->
@@ -41,6 +48,7 @@ const currentTab = ref<Tab>('scraper')
     <main class="main-content">
       <ScraperView v-if="currentTab === 'scraper'" />
       <DownloadView v-if="currentTab === 'download'" />
+      <LocalView v-if="currentTab === 'local'" />
       <SettingsView v-if="currentTab === 'settings'" />
     </main>
   </div>

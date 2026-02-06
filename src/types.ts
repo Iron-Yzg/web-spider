@@ -130,3 +130,14 @@ export interface YtdlpResult {
   file_size: number
   message: string
 }
+
+// 本地视频
+export interface LocalVideo {
+  id: string
+  name: string
+  file_path: string
+  file_size: string
+  duration: string
+  resolution: string
+  added_at: string
+}

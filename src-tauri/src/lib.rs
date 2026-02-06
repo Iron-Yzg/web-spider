@@ -9,7 +9,7 @@ mod services;
 
 use std::path::PathBuf;
 
-pub use models::{AppConfig, DownloadProgress, LocalStorageItem, ScrapeResult, VideoItem, VideoStatus, Website, YtdlpConfig, YtdlpTask, YtdlpTaskStatus, YtdlpResult};
+pub use models::{AppConfig, DownloadProgress, LocalStorageItem, LocalVideo, ScrapeResult, VideoItem, VideoStatus, Website, YtdlpConfig, YtdlpTask, YtdlpTaskStatus, YtdlpResult};
 pub use db::{Database, PaginatedVideos};
 
 #[cfg(feature = "desktop")]
@@ -124,6 +124,13 @@ pub fn run() {
                 commands::get_ytdlp_tasks,
                 commands::cleanup_ytdlp_tasks,
                 commands::open_path,
+                // 本地视频命令
+                commands::get_app_data_dir,
+                commands::select_video_files,
+                commands::read_local_videos,
+                commands::write_local_videos,
+                commands::get_file_stats,
+                commands::get_media_info,
             ]);
     }
 
