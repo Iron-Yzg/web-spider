@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import ScraperPage from './components/ScraperPage.vue'
-import SettingsPage from './components/SettingsPage.vue'
-import YtdlpDownload from './components/YtdlpDownload.vue'
+import ScraperView from './views/ScraperView.vue'
+import SettingsView from './views/SettingsView.vue'
+import DownloadView from './views/DownloadView.vue'
 
 type Tab = 'scraper' | 'download' | 'settings'
 
@@ -38,9 +38,9 @@ const currentTab = ref<Tab>('scraper')
 
     <!-- 主内容区 -->
     <main class="main-content">
-      <ScraperPage v-if="currentTab === 'scraper'" />
-      <YtdlpDownload v-if="currentTab === 'download'" />
-      <SettingsPage v-if="currentTab === 'settings'" />
+      <ScraperView v-if="currentTab === 'scraper'" />
+      <DownloadView v-if="currentTab === 'download'" />
+      <SettingsView v-if="currentTab === 'settings'" />
     </main>
   </div>
 </template>

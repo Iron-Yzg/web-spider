@@ -1,8 +1,18 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { invoke } from '@tauri-apps/api/core'
-import { open } from '@tauri-apps/plugin-dialog'
+import { open, message, ask } from '@tauri-apps/plugin-dialog'
 import type { AppConfig, Website, LocalStorageItem, ScraperInfo, YtdlpConfig } from '../types'
+import {
+  getConfig,
+  updateConfig,
+  getWebsites,
+  saveWebsite as saveWebsiteApi,
+  deleteWebsite as deleteWebsiteApi,
+  setDefaultWebsite as setDefaultWebsiteApi,
+  getScrapers,
+  getYtdlpConfig,
+  updateYtdlpConfig,
+} from '../services/api'
 
 // 设置分类
 type SettingSection = 'websites' | 'download' | 'ytdlp' | 'proxy' | 'ai'
@@ -79,7 +89,7 @@ onMounted(async () => {
 
 async function loadConfig() {
   try {
-    config.value = await invoke<AppConfig>('get_config')
+    config.value = await getConfig()
   } catch (e) {
     console.error('加载配置失败:', e)
   }
@@ -87,7 +97,7 @@ async function loadConfig() {
 
 async function loadYtdlpConfig() {
   try {
-    const saved = await invoke<YtdlpConfig>('get_ytdlp_config')
+    const saved = await getYtdlpConfig()
     if (saved) {
       ytdlpConfig.value = saved
     }
@@ -98,7 +108,7 @@ async function loadYtdlpConfig() {
 
 async function loadWebsites() {
   try {
-    websites.value = await invoke<Website[]>('get_websites')
+    websites.value = await getWebsites()
   } catch (e) {
     console.error('加载网站列表失败:', e)
   }
@@ -106,7 +116,7 @@ async function loadWebsites() {
 
 async function loadScrapers() {
   try {
-    scrapers.value = await invoke<ScraperInfo[]>('get_scrapers')
+    scrapers.value = await getScrapers()
   } catch (e) {
     console.error('加载爬虫列表失败:', e)
   }
@@ -200,7 +210,7 @@ async function saveWebsite() {
       local_storage: websiteForm.value.local_storage,
       is_default: editingWebsite.value?.is_default || false
     }
-    await invoke('save_website', { website })
+    await saveWebsiteApi(website)
     await loadWebsites()
     closeWebsiteForm()
     showSaveMessage('success', '网站已保存')
@@ -213,20 +223,24 @@ async function saveWebsite() {
 
 async function deleteWebsite(id: string) {
   const name = websites.value.find(w => w.id === id)?.name || ''
-  if (!confirm(`确定要删除网站 "${name}" 吗？`)) return
+  const confirmed = await ask(`确定要删除网站 "${name}" 吗？`, {
+    title: '确认删除',
+    kind: 'warning',
+  })
+  if (!confirmed) return
 
   try {
-    await invoke('delete_website', { websiteId: id })
+    await deleteWebsiteApi(id)
     await loadWebsites()
-    showSaveMessage('success', '网站已删除')
+    await message('网站已删除', { title: '成功', kind: 'info' })
   } catch (e) {
-    showSaveMessage('error', '删除失败: ' + e)
+    await message(`删除失败: ${e}`, { title: '错误', kind: 'error' })
   }
 }
 
 async function setDefaultWebsite(id: string) {
   try {
-    await invoke('set_default_website', { websiteId: id })
+    await setDefaultWebsiteApi(id)
     await loadWebsites()
     showSaveMessage('success', '已设为默认网站')
   } catch (e) {
@@ -239,7 +253,7 @@ async function setDefaultWebsite(id: string) {
 async function saveDownloadConfig() {
   isSaving.value = true
   try {
-    await invoke('update_config', { config: config.value })
+    await updateConfig(config.value)
     showSaveMessage('success', '配置已保存')
   } catch (e) {
     showSaveMessage('error', '保存失败: ' + e)
@@ -251,9 +265,8 @@ async function saveDownloadConfig() {
 async function selectDownloadPath() {
   try {
     const selected = await open({
+      title: '选择下载目录',
       directory: true,
-      multiple: false,
-      title: '选择下载目录'
     })
     if (selected) {
       if (Array.isArray(selected) && selected.length > 0) {
@@ -267,25 +280,12 @@ async function selectDownloadPath() {
   }
 }
 
-async function checkFfmpeg() {
-  try {
-    const hasFfmpeg = await invoke<boolean>('check_ffmpeg')
-    if (hasFfmpeg) {
-      alert('FFmpeg 已安装')
-    } else {
-      alert('FFmpeg 未安装\n\n请运行: brew install ffmpeg')
-    }
-  } catch (e) {
-    alert('检查失败: ' + e)
-  }
-}
-
 // ========== yt-dlp 设置 ==========
 
 async function saveYtdlpConfig() {
   isSaving.value = true
   try {
-    await invoke('update_ytdlp_config', { config: ytdlpConfig.value })
+    await updateYtdlpConfig(ytdlpConfig.value)
     showSaveMessage('success', 'yt-dlp 配置已保存')
   } catch (e) {
     showSaveMessage('error', '保存失败: ' + e)
@@ -367,18 +367,18 @@ async function saveYtdlpConfig() {
                   <span class="item-url">{{ website.base_url }}</span>
                 </div>
                 <div class="item-actions">
-                  <button v-if="!website.is_default" @click="setDefaultWebsite(website.id)" class="action-btn" title="设为默认">
+                  <button v-if="!website.is_default" @click.stop="setDefaultWebsite(website.id)" class="action-btn" title="设为默认">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                       <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
                     </svg>
                   </button>
-                  <button @click="openWebsiteForm(website)" class="action-btn" title="编辑">
+                  <button @click.stop="openWebsiteForm(website)" class="action-btn" title="编辑">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                       <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
                       <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
                     </svg>
                   </button>
-                  <button @click="deleteWebsite(website.id)" class="action-btn delete" title="删除">
+                  <button @click.stop="deleteWebsite(website.id)" class="action-btn delete" title="删除">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                       <polyline points="3 6 5 6 21 6"/>
                       <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
@@ -471,11 +471,6 @@ async function saveYtdlpConfig() {
                   <input type="text" v-model="config.download_path" placeholder="输入下载目录路径" class="form-input" />
                   <button @click="selectDownloadPath" class="btn-secondary">选择</button>
                 </div>
-              </div>
-
-              <div class="form-group">
-                <label>FFmpeg 状态</label>
-                <button @click="checkFfmpeg" class="btn-secondary">检查状态</button>
               </div>
 
               <div class="form-actions">
@@ -631,9 +626,10 @@ async function saveYtdlpConfig() {
 /* 保存消息提示 */
 .save-message {
   position: fixed;
-  top: 20px;
-  right: 20px;
-  padding: 12px 20px;
+  top: 70px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 10px 24px;
   border-radius: 8px;
   font-size: 14px;
   font-weight: 500;

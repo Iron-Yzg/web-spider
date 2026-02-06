@@ -1,16 +1,26 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch } from 'vue'
-import { invoke, convertFileSrc } from '@tauri-apps/api/core'
+import { convertFileSrc } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { YtdlpTask, YtdlpTaskStatus } from '../types'
-import VideoPlayer from './VideoPlayer.vue'
+import {
+  getConfig,
+  getYtdlpTasks,
+  addYtdlpTasks,
+  startYtdlpTask,
+  stopYtdlpTask,
+  deleteYtdlpTask,
+  cleanupYtdlpTasks,
+  openPath,
+} from '../services/api'
+import AddTaskDialog from '../components/AddTaskDialog.vue'
+import VideoPlayer from '../components/VideoPlayer.vue'
 
 // 任务列表
 const tasks = ref<YtdlpTask[]>([])
 
 // yt-dlp 状态
 const ytdlpAvailable = ref(true)
-const ytdlpVersion = ref('')
 
 // 下载配置
 const downloadPath = ref('./downloads')
@@ -21,10 +31,6 @@ const statusFilter = ref<YtdlpTaskStatus | ''>('')
 
 // 弹窗状态
 const showAddDialog = ref(false)
-const urlInput = ref('')
-const urls = ref<string[]>([])
-const errorMessage = ref('')
-const successMessage = ref('')
 
 // 监听器
 let unlistenProgress: (() => void) | null = null
@@ -34,7 +40,7 @@ onMounted(async () => {
 
   // 加载下载配置
   try {
-    const config = await invoke<any>('get_config')
+    const config = await getConfig()
     downloadPath.value = config.download_path || './downloads'
   } catch (e) {
     console.error('加载配置失败:', e)
@@ -73,7 +79,7 @@ onUnmounted(() => {
 // 刷新任务列表
 async function refreshTasks() {
   try {
-    const result = await invoke<YtdlpTask[]>('get_ytdlp_tasks')
+    const result = await getYtdlpTasks()
     tasks.value = result
   } catch (e) {
     console.error('刷新任务列表失败:', e)
@@ -88,10 +94,6 @@ function canStart(task: YtdlpTask): boolean {
 // 打开添加弹窗
 function openAddDialog() {
   showAddDialog.value = true
-  urlInput.value = ''
-  urls.value = []
-  errorMessage.value = ''
-  successMessage.value = ''
 }
 
 // 关闭添加弹窗
@@ -99,50 +101,12 @@ function closeAddDialog() {
   showAddDialog.value = false
 }
 
-// 移除 URL
-function removeUrl(index: number) {
-  urls.value.splice(index, 1)
-}
-
-// 验证 URL
-function isValidUrl(url: string): boolean {
+// 处理添加任务（从弹窗接收 URL 列表）
+async function handleAddTasks(urls: string[]) {
   try {
-    new URL(url)
-    return true
-  } catch {
-    return false
-  }
-}
-
-// 批量解析 URL
-function parseMultipleUrls(event: ClipboardEvent) {
-  const text = event.clipboardData?.getData('text') || ''
-  const lines = text.split(/[\n,]/).map(u => u.trim()).filter(u => u)
-  for (const url of lines) {
-    if (isValidUrl(url) && !urls.value.includes(url)) {
-      urls.value.push(url)
-    }
-  }
-}
-
-// 添加任务（只添加，不启动）
-async function addTasks() {
-  if (urls.value.length === 0) {
-    errorMessage.value = '请输入视频链接'
-    return
-  }
-
-  errorMessage.value = ''
-  successMessage.value = ''
-
-  try {
-    await invoke('add_ytdlp_tasks', {
-      urls: urls.value,
-    })
-
-    successMessage.value = `已添加 ${urls.value.length} 个任务`
+    await addYtdlpTasks(urls)
   } catch (e) {
-    errorMessage.value = '添加任务失败: ' + e
+    console.error('添加任务失败:', e)
   } finally {
     closeAddDialog()
     await refreshTasks()
@@ -152,7 +116,7 @@ async function addTasks() {
 // 停止任务
 async function stopTask(taskId: string) {
   try {
-    await invoke('stop_ytdlp_task', { taskId: taskId })
+    await stopYtdlpTask(taskId)
     await refreshTasks()
   } catch (e) {
     console.error('停止任务失败:', e)
@@ -162,10 +126,7 @@ async function stopTask(taskId: string) {
 // 开始任务（断点续传）
 async function startTask(taskId: string) {
   try {
-    await invoke('start_ytdlp_task', {
-      taskId: taskId,
-      outputPath: downloadPath.value,
-    })
+    await startYtdlpTask(taskId, downloadPath.value)
   } catch (e) {
     console.error('开始任务失败:', e)
     await refreshTasks()
@@ -178,10 +139,10 @@ async function deleteTask(taskId: string) {
     // 如果任务正在运行，先停止
     const task = tasks.value.find(t => t.id === taskId)
     if (task && task.status === 'Downloading') {
-      await invoke('stop_ytdlp_task', { taskId: taskId })
+      await stopYtdlpTask(taskId)
     }
     // 从数据库删除任务（会清理临时文件）
-    await invoke('delete_ytdlp_task', { taskId: taskId })
+    await deleteYtdlpTask(taskId)
     tasks.value = tasks.value.filter(t => t.id !== taskId)
   } catch (e) {
     console.error('删除任务失败:', e)
@@ -191,7 +152,7 @@ async function deleteTask(taskId: string) {
 // 清理已完成的任务
 async function cleanupTasks() {
   try {
-    await invoke('cleanup_ytdlp_tasks')
+    await cleanupYtdlpTasks()
     await refreshTasks()
   } catch (e) {
     console.error('清理任务失败:', e)
@@ -237,7 +198,7 @@ async function openFolder(filePath: string) {
     const path = filePath.includes('/') || filePath.includes('\\')
       ? filePath.substring(0, filePath.lastIndexOf('/'))
       : filePath
-    await invoke('open_path', { path })
+    await openPath(path)
   } catch (e) {
     console.error('打开文件夹失败:', e)
   }
@@ -498,51 +459,11 @@ watch([searchQuery, statusFilter, () => tasks.value], () => {
     </div>
 
     <!-- 添加下载弹窗 -->
-    <div v-if="showAddDialog" class="dialog-overlay" @click.self="closeAddDialog">
-      <div class="dialog">
-        <div class="dialog-header">
-          <h3>添加下载</h3>
-          <button @click="closeAddDialog" class="close-btn">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
-          </button>
-        </div>
-
-        <div class="dialog-body">
-          
-
-          <div class="form-group">
-            <label>视频链接</label>
-            <textarea v-model="urlInput" @paste="parseMultipleUrls" class="form-textarea" placeholder="输入视频链接（支持粘贴多个，换行或逗号分隔）"></textarea>
-          </div>
-
-          <!-- 已添加的链接列表 -->
-          <div v-if="urls.length > 0" class="url-list">
-            <div v-for="(url, index) in urls" :key="index" class="url-item">
-              <span class="url-text">{{ url }}</span>
-              <button @click="removeUrl(index)" class="remove-url">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <line x1="18" y1="6" x2="6" y2="18"></line>
-                  <line x1="6" y1="6" x2="18" y2="18"></line>
-                </svg>
-              </button>
-            </div>
-          </div>
-
-          <div v-if="errorMessage" class="error-message">{{ errorMessage }}</div>
-          <div v-if="successMessage" class="success-message">{{ successMessage }}</div>
-        </div>
-
-        <div class="dialog-footer">
-          <button @click="closeAddDialog" class="btn btn-secondary">取消</button>
-          <button @click="addTasks" class="btn btn-primary" :disabled="urls.length === 0">
-            添加 {{ urls.length > 0 ? `(${urls.length}个)` : '' }}
-          </button>
-        </div>
-      </div>
-    </div>
+    <AddTaskDialog
+      :visible="showAddDialog"
+      @close="closeAddDialog"
+      @confirm="handleAddTasks"
+    />
 
     <!-- 视频播放器 -->
     <VideoPlayer
@@ -1002,201 +923,6 @@ watch([searchQuery, statusFilter, () => tasks.value], () => {
 .action-btn.delete:hover {
   background: #fee2e2;
   color: #dc2626;
-}
-
-/* 弹窗样式 */
-.dialog-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.7);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  backdrop-filter: blur(4px);
-}
-
-.dialog {
-  width: 90%;
-  max-width: 500px;
-  background: #1e293b;
-  border-radius: 16px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-}
-
-.dialog-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 20px 24px;
-  border-bottom: 1px solid #334155;
-}
-
-.dialog-header h3 {
-  margin: 0;
-  font-size: 18px;
-  color: #f1f5f9;
-}
-
-.close-btn {
-  background: transparent;
-  border: none;
-  color: #64748b;
-  cursor: pointer;
-  padding: 4px;
-  border-radius: 4px;
-}
-
-.close-btn:hover {
-  color: #f1f5f9;
-  background: #334155;
-}
-
-.dialog-body {
-  padding: 24px;
-}
-
-.form-group {
-  margin-bottom: 20px;
-}
-
-.form-group label {
-  display: block;
-  font-size: 14px;
-  color: #94a3b8;
-  margin-bottom: 8px;
-}
-
-.form-input {
-  width: 100%;
-  padding: 12px 16px;
-  background: #0f172a;
-  border: 1px solid #334155;
-  border-radius: 8px;
-  color: #f1f5f9;
-  font-size: 14px;
-}
-
-.form-input:focus {
-  outline: none;
-  border-color: #6366f1;
-}
-
-.form-textarea {
-  width: 100%;
-  height: 100px;
-  padding: 12px 16px;
-  background: #0f172a;
-  border: 1px solid #334155;
-  border-radius: 8px;
-  color: #f1f5f9;
-  font-size: 14px;
-  resize: vertical;
-}
-
-.form-textarea:focus {
-  outline: none;
-  border-color: #6366f1;
-}
-
-.url-list {
-  max-height: 150px;
-  overflow-y: auto;
-  margin-bottom: 16px;
-}
-
-.url-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 8px 12px;
-  background: #0f172a;
-  border-radius: 6px;
-  margin-bottom: 8px;
-}
-
-.url-text {
-  font-size: 12px;
-  color: #94a3b8;
-  word-break: break-all;
-  flex: 1;
-}
-
-.remove-url {
-  background: transparent;
-  border: none;
-  color: #64748b;
-  cursor: pointer;
-  padding: 4px;
-  margin-left: 8px;
-}
-
-.remove-url:hover {
-  color: #ef4444;
-}
-
-.error-message {
-  padding: 12px;
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: 8px;
-  color: #ef4444;
-  font-size: 14px;
-  margin-bottom: 16px;
-}
-
-.success-message {
-  padding: 12px;
-  background: rgba(34, 197, 94, 0.1);
-  border: 1px solid rgba(34, 197, 94, 0.3);
-  border-radius: 8px;
-  color: #22c55e;
-  font-size: 14px;
-  margin-bottom: 16px;
-}
-
-.dialog-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
-  padding: 16px 24px;
-  border-top: 1px solid #334155;
-}
-
-.btn {
-  padding: 10px 20px;
-  border: none;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-secondary {
-  background: transparent;
-  color: #94a3b8;
-  border: 1px solid #334155;
-}
-
-.btn-secondary:hover {
-  background: #334155;
-  color: #f1f5f9;
-}
-
-.btn-primary {
-  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-  color: white;
-}
-
-.btn-primary:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
-}
-
-.btn-primary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 </style>

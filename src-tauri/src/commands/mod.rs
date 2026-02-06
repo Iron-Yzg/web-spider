@@ -2,6 +2,7 @@ use chrono::Utc;
 use tokio::sync::broadcast;
 use tokio::task;
 use tauri::{Emitter, State, WebviewWindow};
+use tauri_plugin_dialog::DialogExt;
 
 use crate::db::{Database, PaginatedVideos};
 use crate::models::{
@@ -74,8 +75,18 @@ pub async fn update_ytdlp_config(db: State<'_, Database>, config: YtdlpConfig) -
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
-pub fn select_directory(_window: WebviewWindow) -> Result<String, String> {
-    Err("DIALOG_REQUIRED".to_string())
+pub async fn select_directory(window: WebviewWindow) -> Result<Option<String>, String> {
+    // 使用 file dialog 选择文件夹
+    let result: Option<tauri_plugin_dialog::FilePath> = window
+        .dialog()
+        .file()
+        .set_title("选择下载目录")
+        .blocking_pick_folder();
+
+    match result {
+        Some(path) => Ok(Some(path.to_string())),
+        None => Ok(None),
+    }
 }
 
 #[cfg(not(feature = "desktop"))]

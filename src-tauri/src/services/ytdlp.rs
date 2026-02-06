@@ -326,8 +326,7 @@ pub async fn download_video_with_continue(
 
                         // 发送进度更新
                         if progress > 0 || !speed.is_empty() {
-                            tracing::info!("[yt-dlp-progress] {}% | {} | {} | {}",
-                                progress, speed, eta, video_title);
+                            tracing::info!("[yt-dlp-progress] {}% | {} | {} | {}", progress, speed, eta, video_title);
 
                             progress_callback(YtdlpTask {
                                 id: task_id.to_string(),

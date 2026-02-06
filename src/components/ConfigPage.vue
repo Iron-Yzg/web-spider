@@ -103,19 +103,6 @@ function removeStorageItem(index: number) {
   config.value.local_storage.splice(index, 1)
 }
 
-async function checkFfmpeg() {
-  try {
-    const hasFfmpeg = await invoke<boolean>('check_ffmpeg')
-    if (hasFfmpeg) {
-      alert('✅ FFmpeg 已安装')
-    } else {
-      alert('❌ FFmpeg 未安装\n\n请运行: brew install ffmpeg')
-    }
-  } catch (e) {
-    alert('检查失败: ' + e)
-  }
-}
-
 const localStorageList = computed(() => config.value.local_storage)
 </script>
 
@@ -156,22 +143,6 @@ const localStorageList = computed(() => config.value.local_storage)
                   <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
                 </svg>
                 选择
-              </button>
-            </div>
-          </div>
-
-          <div class="setting-item">
-            <div class="setting-label">
-              <span class="label-text">FFmpeg 状态</span>
-              <span class="label-desc">用于视频下载的转码工具</span>
-            </div>
-            <div class="setting-control">
-              <button @click="checkFfmpeg" class="check-btn">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-                  <polyline points="22 4 12 14.01 9 11.01"/>
-                </svg>
-                检查状态
               </button>
             </div>
           </div>

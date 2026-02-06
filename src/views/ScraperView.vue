@@ -1,11 +1,22 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
-import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import type { VideoItem, ScrapeResult, DownloadProgress, PaginatedVideos, Website } from '../types'
 import { VideoStatus } from '../types'
-import LogPopup from './LogPopup.vue'
-import VideoPlayer from './VideoPlayer.vue'
+import {
+  getVideos as fetchVideos,
+  searchVideos as searchVideosApi,
+  getVideosByWebsite as fetchVideosByWebsite,
+  scrapeVideo as scrapeVideoApi,
+  deleteVideo as deleteVideoApi,
+  batchDownload as batchDownloadApi,
+  clearDownloadedVideos,
+  getWebsites as fetchWebsites,
+  getWebsiteByName as fetchWebsiteByName,
+  downloadVideo as downloadVideoApi,
+} from '../services/api'
+import LogPopup from '../components/LogPopup.vue'
+import VideoPlayer from '../components/VideoPlayer.vue'
 
 const videoId = ref('')
 const isScraping = ref(false)
@@ -186,16 +197,13 @@ async function loadVideos(isLoadMore = false) {
 
     // 如果选择了网站，按网站名称筛选
     if (selectedWebsiteName.value) {
-      result = await invoke<PaginatedVideos>('get_videos_by_website', {
-        websiteName: selectedWebsiteName.value,
-        page: currentPage.value,
+      result = await fetchVideosByWebsite(
+        selectedWebsiteName.value,
+        currentPage.value,
         pageSize
-      })
+      )
     } else {
-      result = await invoke<PaginatedVideos>('get_videos_paginated', {
-        page: currentPage.value,
-        pageSize
-      })
+      result = await fetchVideos(currentPage.value, pageSize)
     }
 
     if (isLoadMore) {
@@ -216,7 +224,7 @@ async function loadVideos(isLoadMore = false) {
 
 async function loadWebsites() {
   try {
-    websites.value = await invoke<Website[]>('get_websites')
+    websites.value = await fetchWebsites()
     // 自动选择默认网站
     const defaultSite = websites.value.find(w => w.is_default)
     if (defaultSite) {
@@ -260,7 +268,7 @@ async function replaceVideoToken(video: VideoItem, url: string): Promise<string>
 
   try {
     // 根据视频的website_name获取对应网站的配置
-    const website = await invoke<Website | null>('get_website_by_name', { name: video.website_name })
+    const website = await fetchWebsiteByName(video.website_name)
     if (website && website.local_storage) {
       const tokenItem = website.local_storage.find((item: { key: string }) => item.key === 'token')
       if (tokenItem) {
@@ -304,11 +312,11 @@ async function searchVideos() {
 
   try {
     isLoadingMore.value = true
-    const result = await invoke<PaginatedVideos>('search_videos', {
-      query: searchQuery.value,
-      page: currentPage.value,
+    const result = await searchVideosApi(
+      searchQuery.value,
+      currentPage.value,
       pageSize
-    })
+    )
 
     videos.value = result.videos
     total.value = result.total
@@ -359,10 +367,10 @@ async function scrape() {
   isScraping.value = true
 
   try {
-    const result = await invoke<ScrapeResult>('scrape_video', {
-      videoId: videoId.value.trim(),
-      websiteId: selectedWebsite.value || null
-    })
+    const result = await scrapeVideoApi(
+      selectedWebsite.value || '',
+      videoId.value.trim()
+    )
 
     scrapeResult.value = result
 
@@ -409,10 +417,9 @@ function handleLogPopupClose() {
   }
 }
 
-async function downloadVideo(video: VideoItem) {
+async function downloadVideoItem(video: VideoItem) {
   try {
-    await invoke('download_video', { videoId: video.id })
-    // 不要在这里调用 loadVideos()，否则会清除进度状态
+    await downloadVideoApi(video.id)
     // 状态更新由 progress 事件和 videos-updated 事件处理
   } catch (e) {
     alert('下载失败: ' + e)
@@ -427,7 +434,7 @@ async function batchDownload() {
   }
 
   try {
-    await invoke('batch_download', { videoIds: ids })
+    await batchDownloadApi(ids)
     selectedIds.value.clear()
     // 不要在这里调用 loadVideos()，否则会清除进度状态
     // 状态更新由 progress 事件和 videos-updated 事件处理
@@ -443,7 +450,7 @@ async function deleteVideo(id: string) {
     message: '确定要删除这个视频吗？',
     onConfirm: async () => {
       try {
-        await invoke('delete_video', { videoId: id })
+        await deleteVideoApi(id)
         selectedIds.value.delete(id)
         await loadVideos()
       } catch (e) {
@@ -466,7 +473,7 @@ async function deleteSelected() {
     onConfirm: async () => {
       try {
         for (const id of ids) {
-          await invoke('delete_video', { videoId: id })
+          await deleteVideoApi(id)
         }
         selectedIds.value.clear()
         await loadVideos()
@@ -496,7 +503,7 @@ async function clearDownloaded() {
     message: '确定要清除所有已下载的视频吗？',
     onConfirm: async () => {
       try {
-        await invoke('clear_downloaded')
+        await clearDownloadedVideos()
         await loadVideos()
       } catch (e) {
         alert('清除失败: ' + e)
@@ -606,7 +613,7 @@ async function handleDeleteCurrent() {
 
   try {
     // 调用删除接口
-    await invoke('delete_video', { videoId: currentVideo.id })
+    await deleteVideoApi(currentVideo.id)
     // 从本地列表中移除
     const index = videos.value.findIndex(v => v.id === currentVideo.id)
     if (index > -1) {
@@ -874,7 +881,7 @@ function handleImageError(event: Event) {
               </button>
               <!-- 下载按钮（下载中时不显示，下载完成后显示已完成） -->
               <button
-                @click="downloadVideo(video)"
+                @click="downloadVideoItem(video)"
                 class="action-btn download"
                 title="下载"
               >
