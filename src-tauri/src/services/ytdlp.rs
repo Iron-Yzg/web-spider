@@ -89,14 +89,22 @@ pub async fn get_video_info(url: &str, quality: u32) -> Result<YtdlpTask, String
     // 构建格式字符串: bestvideo[height<=quality]+bestaudio/best
     let format_str = build_format_string(quality);
 
+    let args: Vec<String> = vec![
+        "--skip-download".to_string(),
+        "--no-check-certificates".to_string(),
+        "--cookies-from-browser".to_string(),
+        "chrome".to_string(), // 或者 "safari", "edge", "firefox"
+        "--impersonate".to_string(),
+        "chrome".to_string(),
+        "-f".to_string(), 
+        format_str.to_string(),
+        "--print".to_string(), 
+        "%(title)s|%(resolution)s|%(filesize_approx)s B|%(ext)s".to_string(),
+        url.to_string(),
+    ];
+
     let output = Command::new(&ytdlp_path)
-        .args(&[
-            "--skip-download",
-            "--no-check-certificates",
-            "-f", &format_str,
-            "--print", "%(title)s|%(resolution)s|%(filesize_approx)s B|%(ext)s",
-            url,
-        ])
+        .args(&args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
@@ -196,20 +204,26 @@ pub async fn download_video_with_continue(
     let bin_dir = ffmpeg_sidecar.parent().ok_or("无法获取二进制目录")?;
 
     // --- 创建软链接：yt-dlp 只认 "ffmpeg" 和 "ffprobe" 这两个名字 ---
-    // 在 bin 目录下创建标准名字的软链接
+    // 在 bin 目录下创建标准名字的软链接（仅当不存在时）
     let ffmpeg_std = bin_dir.join("ffmpeg");
     let ffprobe_std = bin_dir.join("ffprobe");
 
-    // 删除旧软链接（可能指向错误版本）
-    // let _ = std::fs::remove_file(&ffmpeg_std);
-    // let _ = std::fs::remove_file(&ffprobe_std);
-
-    // 创建新软链接
-    if let Err(e) = create_symlink(&ffmpeg_sidecar, &ffmpeg_std) {
-        tracing::warn!("[yt-dlp] 创建 ffmpeg 软链接失败: {}", e);
+    // 检测并创建 ffmpeg 软链接
+    if !ffmpeg_std.exists() {
+        if let Err(e) = create_symlink(&ffmpeg_sidecar, &ffmpeg_std) {
+            tracing::warn!("[yt-dlp] 创建 ffmpeg 软链接失败: {}", e);
+        } else {
+            tracing::info!("[yt-dlp] 已创建 ffmpeg 软链接");
+        }
     }
-    if let Err(e) = create_symlink(&ffprobe_sidecar, &ffprobe_std) {
-        tracing::warn!("[yt-dlp] 创建 ffprobe 软链接失败: {}", e);
+
+    // 检测并创建 ffprobe 软链接
+    if !ffprobe_std.exists() {
+        if let Err(e) = create_symlink(&ffprobe_sidecar, &ffprobe_std) {
+            tracing::warn!("[yt-dlp] 创建 ffprobe 软链接失败: {}", e);
+        } else {
+            tracing::info!("[yt-dlp] 已创建 ffprobe 软链接");
+        }
     }
 
     // 重要：在启动新下载前，先确保杀死可能存在的旧进程
@@ -265,6 +279,12 @@ pub async fn download_video_with_continue(
         "-o".to_string(),
         output_template,
     ];
+
+    // 在 build_args 中添加
+    args.push("--cookies-from-browser".to_string());
+    args.push("chrome".to_string()); // 或者 "safari", "edge", "firefox"
+    args.push("--impersonate".to_string());
+    args.push("chrome".to_string()); // 模拟 Chrome 的 TLS 指纹
 
     // 封面（yt-dlp 会自动调用 ffmpeg 完成）
     if config.thumbnail {
