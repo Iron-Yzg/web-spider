@@ -206,6 +206,8 @@ const playerVisible = ref(false)
 const playerSrc = ref('')
 const playerTitle = ref('')
 const playerFilePath = ref('')
+const playerPlaylist = ref<YtdlpTask[]>([])
+const currentVideoIndex = ref(0)
 const videoRefs = ref<Record<string, HTMLVideoElement>>({})
 
 // 视频加载完成后跳转到第一帧并暂停
@@ -222,13 +224,57 @@ async function openPlayer(task: YtdlpTask) {
   if (task.file_path) {
     // 使用 convertFileSrc 转换本地路径为 asset URL
     const assetUrl = convertFileSrc(task.file_path)
-    console.log('[VideoPlayer] 本地文件路径:', task.file_path)
-    console.log('[VideoPlayer] asset URL:', assetUrl)
 
     playerSrc.value = assetUrl
     playerTitle.value = task.title || '本地视频'
     playerFilePath.value = task.file_path
+    playerPlaylist.value = filteredTasks.value.filter(t => t.file_path)
+    currentVideoIndex.value = filteredTasks.value.findIndex(t => t.id === task.id)
     playerVisible.value = true
+  }
+}
+
+// 处理播放下一个视频
+function handlePlayNext(nextIndex: number) {
+  if (nextIndex >= 0 && nextIndex < playerPlaylist.value.length) {
+    const nextTask = playerPlaylist.value[nextIndex]
+    if (nextTask.file_path) {
+      playerSrc.value = convertFileSrc(nextTask.file_path)
+      playerTitle.value = nextTask.title || '本地视频'
+      playerFilePath.value = nextTask.file_path
+      currentVideoIndex.value = nextIndex
+    }
+  }
+}
+
+// 处理删除当前视频
+async function handleDeleteCurrent() {
+  const currentTask = playerPlaylist.value[currentVideoIndex.value]
+  if (!currentTask) return
+
+  try {
+    await deleteYtdlpTask(currentTask.id)
+    // 从播放列表中移除
+    playerPlaylist.value.splice(currentVideoIndex.value, 1)
+
+    // 如果还有视频，播放下一个
+    if (playerPlaylist.value.length > 0) {
+      const nextIndex = currentVideoIndex.value >= playerPlaylist.value.length
+        ? playerPlaylist.value.length - 1
+        : currentVideoIndex.value
+      const nextTask = playerPlaylist.value[nextIndex]
+      if (nextTask.file_path) {
+        playerSrc.value = convertFileSrc(nextTask.file_path)
+        playerTitle.value = nextTask.title || '本地视频'
+        playerFilePath.value = nextTask.file_path
+        currentVideoIndex.value = nextIndex
+      }
+    } else {
+      // 没有视频了，关闭播放器
+      handlePlayerClose()
+    }
+  } catch (e) {
+    console.error('删除视频失败:', e)
   }
 }
 
@@ -238,6 +284,8 @@ function handlePlayerClose() {
   playerSrc.value = ''
   playerTitle.value = ''
   playerFilePath.value = ''
+  playerPlaylist.value = []
+  currentVideoIndex.value = 0
 }
 
 watch([searchQuery, statusFilter, () => tasks.value], () => {
@@ -463,9 +511,13 @@ watch([searchQuery, statusFilter, () => tasks.value], () => {
     <VideoPlayer
       v-show="playerVisible"
       :visible="playerVisible"
-          :src="playerSrc"
+      :src="playerSrc"
       :title="playerTitle"
+      :playlist="playerPlaylist"
+      :current-index="currentVideoIndex"
       @close="handlePlayerClose"
+      @play-next="handlePlayNext"
+      @delete-current="handleDeleteCurrent"
     />
   </div>
 </template>

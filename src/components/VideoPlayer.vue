@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch, nextTick, onBeforeUnmount } from 'vue'
+import { ref, onMounted, onUnmounted, watch, nextTick, onBeforeUnmount, computed } from 'vue'
 import Artplayer from 'artplayer'
 import Hls from 'hls.js'
 
@@ -7,17 +7,43 @@ interface Props {
   visible: boolean
   src: string
   title: string
+  playlist?: any[]
+  currentIndex?: number
+  videoId?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
   visible: false,
   src: '',
-  title: ''
+  title: '',
+  playlist: () => [],
+  currentIndex: 0,
+  videoId: ''
 })
 
 const emit = defineEmits<{
   close: []
+  playNext: [index: number]
+  deleteCurrent: []
 }>()
+
+// 计算是否有下一个视频
+const hasNextVideo = computed(() => {
+  return props.playlist && props.currentIndex < props.playlist.length - 1
+})
+
+// 播放下一个视频
+function handlePlayNext() {
+  if (hasNextVideo.value) {
+    const nextIndex = props.currentIndex + 1
+    emit('playNext', nextIndex)
+  }
+}
+
+// 删除当前视频
+function handleDelete() {
+  emit('deleteCurrent')
+}
 
 const containerRef = ref<HTMLDivElement | null>(null)
 const artRef = ref<Artplayer | null>(null)
@@ -283,7 +309,28 @@ watch(() => props.src, async (newSrc) => {
         <div v-if="!isFullscreen" class="player-header" @mousedown="startDrag">
           <span class="player-title">{{ title }}</span>
           <div class="header-actions">
-            <button class="close-btn" @click="handleClose" title="关闭">
+            <!-- 播放下一个按钮 -->
+            <button
+              v-if="hasNextVideo"
+              class="action-btn"
+              @click.stop="handlePlayNext"
+              title="播放下一个"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="5 4 15 12 5 20 5 4"></polygon>
+                <line x1="19" y1="5" x2="19" y2="19"></line>
+              </svg>
+            </button>
+            <!-- 删除按钮 -->
+            <button class="action-btn delete-btn" @click.stop="handleDelete" title="删除">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 6h18"></path>
+                <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
+                <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
+              </svg>
+            </button>
+            <!-- 关闭按钮 -->
+            <button class="action-btn" @click.stop="handleClose" title="关闭">
               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="18" y1="6" x2="6" y2="18"></line>
                 <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -369,7 +416,7 @@ watch(() => props.src, async (newSrc) => {
   gap: 8px;
 }
 
-.close-btn {
+.action-btn {
   padding: 6px;
   background: transparent;
   border: none;
@@ -383,12 +430,17 @@ watch(() => props.src, async (newSrc) => {
   opacity: 0;
 }
 
-.player-container:hover .close-btn {
+.player-container:hover .action-btn {
   opacity: 1;
 }
 
-.close-btn:hover {
+.action-btn:hover {
   background: rgba(255, 255, 255, 0.1);
+}
+
+.action-btn.delete-btn:hover {
+  background: rgba(239, 68, 68, 0.3);
+  color: #fca5a5;
 }
 
 .artplayer-container {

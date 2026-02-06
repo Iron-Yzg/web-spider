@@ -186,6 +186,37 @@ function deleteVideo(id: string) {
   }
 }
 
+// 处理删除当前视频（从播放器中删除）
+async function handleDeleteCurrent() {
+  const currentVideo = playerPlaylist.value[currentVideoIndex.value]
+  if (!currentVideo) return
+
+  // 直接删除，不询问
+  const index = videos.value.findIndex(v => v.id === currentVideo.id)
+  if (index > -1) {
+    videos.value.splice(index, 1)
+    await saveVideos()
+    filterVideos()
+  }
+
+  // 从播放列表中移除
+  playerPlaylist.value.splice(currentVideoIndex.value, 1)
+
+  // 如果还有视频，播放下一个
+  if (playerPlaylist.value.length > 0) {
+    const nextIndex = currentVideoIndex.value >= playerPlaylist.value.length
+      ? playerPlaylist.value.length - 1
+      : currentVideoIndex.value
+    const nextVideo = playerPlaylist.value[nextIndex]
+    playerSrc.value = convertFileSrc(nextVideo.file_path)
+    playerTitle.value = nextVideo.name
+    currentVideoIndex.value = nextIndex
+  } else {
+    // 没有视频了，关闭播放器
+    handlePlayerClose()
+  }
+}
+
 // 关闭播放器
 function handlePlayerClose() {
   playerVisible.value = false
@@ -326,7 +357,7 @@ onMounted(async () => {
       video-id=""
       @close="handlePlayerClose"
       @play-next="handlePlayNext"
-      @delete-current="() => {}"
+      @delete-current="handleDeleteCurrent"
     />
   </div>
 </template>
