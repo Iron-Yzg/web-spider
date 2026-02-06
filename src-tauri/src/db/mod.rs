@@ -69,6 +69,9 @@ fn row_to_ytdlp_task(row: &SqliteRow) -> Result<YtdlpTask, sqlx::Error> {
     let completed_at: Option<DateTime<Utc>> = row.try_get("completed_at")
         .ok()
         .and_then(|s: String| s.parse().ok());
+    // 新字段：resolution 和 file_size（数据库可能没有这些列，使用默认值）
+    let resolution: String = row.try_get("resolution").ok().unwrap_or_default();
+    let file_size: String = row.try_get("file_size").ok().unwrap_or_default();
 
     Ok(YtdlpTask {
         id,
@@ -81,6 +84,8 @@ fn row_to_ytdlp_task(row: &SqliteRow) -> Result<YtdlpTask, sqlx::Error> {
         message,
         created_at,
         completed_at,
+        resolution,
+        file_size,
     })
 }
 

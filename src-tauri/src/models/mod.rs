@@ -204,6 +204,12 @@ pub struct YtdlpTask {
     pub created_at: chrono::DateTime<chrono::Utc>,
     /// 完成时间
     pub completed_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// 视频分辨率 (如 "1920x1080")
+    #[serde(default)]
+    pub resolution: String,
+    /// 预估文件大小 (如 "150.5MiB")
+    #[serde(default)]
+    pub file_size: String,
 }
 
 impl Default for YtdlpTask {
@@ -219,6 +225,8 @@ impl Default for YtdlpTask {
             message: String::new(),
             created_at: chrono::Utc::now(),
             completed_at: None,
+            resolution: String::new(),
+            file_size: String::new(),
         }
     }
 }

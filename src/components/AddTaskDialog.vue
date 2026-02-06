@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
+import { getVideoInfo, addYtdlpTasks, getYtdlpConfig } from '../services/api'
+import type { YtdlpTask, YtdlpTaskStatus } from '../types'
 
 const props = defineProps<{
   visible: boolean
@@ -7,19 +9,43 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'close'): void
-  (e: 'confirm', urls: string[]): void
+  (e: 'confirm', tasks: YtdlpTask[]): void
 }>()
 
+// 视频信息列表
+interface VideoInfo {
+  url: string
+  title: string
+  resolution: string
+  fileSize: string
+  loading: boolean
+  error?: string
+}
+
 const urlInput = ref('')
-const urls = ref<string[]>([])
+const videoInfos = ref<VideoInfo[]>([])
 const errorMessage = ref('')
+const isAdding = ref(false)
+const ytdlpQuality = ref(1080)
+
+// 获取yt-dlp配置中的质量设置
+async function loadYtdlpConfig() {
+  try {
+    const config = await getYtdlpConfig()
+    ytdlpQuality.value = config.quality || 1080
+  } catch (e) {
+    console.error('获取yt-dlp配置失败:', e)
+  }
+}
 
 // 重置状态
-watch(() => props.visible, (val) => {
+watch(() => props.visible, async (val) => {
   if (val) {
     urlInput.value = ''
-    urls.value = []
+    videoInfos.value = []
     errorMessage.value = ''
+    isAdding.value = false
+    await loadYtdlpConfig()
   }
 })
 
@@ -33,19 +59,8 @@ function isValidUrl(url: string): boolean {
   }
 }
 
-// 解析粘贴的多个 URL
-function handlePaste(event: ClipboardEvent) {
-  const text = event.clipboardData?.getData('text') || ''
-  const lines = text.split(/[\n,]/).map(u => u.trim()).filter(u => u)
-  for (const url of lines) {
-    if (isValidUrl(url) && !urls.value.includes(url)) {
-      urls.value.push(url)
-    }
-  }
-}
-
-// 手动添加 URL
-function addUrl() {
+// 添加 URL 并获取视频信息
+async function addUrl() {
   const url = urlInput.value.trim()
   if (!url) {
     errorMessage.value = '请输入视频链接'
@@ -55,27 +70,146 @@ function addUrl() {
     errorMessage.value = '链接格式不正确'
     return
   }
-  if (urls.value.includes(url)) {
+
+  // 检查是否已存在
+  const existingIndex = videoInfos.value.findIndex(v => v.url === url)
+  if (existingIndex !== -1) {
     errorMessage.value = '该链接已添加'
     return
   }
-  urls.value.push(url)
-  urlInput.value = ''
+
+  // 添加到列表并获取信息
+  const newInfo: VideoInfo = {
+    url,
+    title: '加载中...',
+    resolution: '-',
+    fileSize: '-',
+    loading: true,
+  }
+  videoInfos.value.push(newInfo)
   errorMessage.value = ''
+  urlInput.value = ''
+
+  // 获取视频信息
+  try {
+    const info = await getVideoInfo(url, ytdlpQuality.value)
+    const index = videoInfos.value.findIndex(v => v.url === url)
+    if (index !== -1) {
+      videoInfos.value[index] = {
+        url,
+        title: info.title || '未知标题',
+        resolution: info.resolution || '-',
+        fileSize: info.file_size || '-',
+        loading: false,
+      }
+    }
+  } catch (e: any) {
+    const index = videoInfos.value.findIndex(v => v.url === url)
+    if (index !== -1) {
+      videoInfos.value[index].loading = false
+      videoInfos.value[index].error = e.message || '获取失败'
+    }
+  }
+}
+
+// 解析粘贴的多个 URL
+async function handlePaste(event: ClipboardEvent) {
+  const text = event.clipboardData?.getData('text') || ''
+  const lines = text.split(/[\n,]/).map(u => u.trim()).filter(u => u && isValidUrl(u))
+
+  for (const url of lines) {
+    if (!videoInfos.value.find(v => v.url === url)) {
+      await addUrlByUrl(url)
+    }
+  }
+}
+
+// 通过URL添加（不重复输入）
+async function addUrlByUrl(url: string) {
+  if (!isValidUrl(url)) return
+
+  const existingIndex = videoInfos.value.findIndex(v => v.url === url)
+  if (existingIndex !== -1) return
+
+  const newInfo: VideoInfo = {
+    url,
+    title: '加载中...',
+    resolution: '-',
+    fileSize: '-',
+    loading: true,
+  }
+  videoInfos.value.push(newInfo)
+
+  try {
+    const info = await getVideoInfo(url, ytdlpQuality.value)
+    const index = videoInfos.value.findIndex(v => v.url === url)
+    if (index !== -1) {
+      videoInfos.value[index] = {
+        url,
+        title: info.title || '未知标题',
+        resolution: info.resolution || '-',
+        fileSize: info.file_size || '-',
+        loading: false,
+      }
+    }
+  } catch (e: any) {
+    const index = videoInfos.value.findIndex(v => v.url === url)
+    if (index !== -1) {
+      videoInfos.value[index].loading = false
+      videoInfos.value[index].error = e.message || '获取失败'
+    }
+  }
 }
 
 // 移除 URL
 function removeUrl(index: number) {
-  urls.value.splice(index, 1)
+  videoInfos.value.splice(index, 1)
 }
 
+// 是否可以开始（所有URL都已获取到信息，且没有失败的）
+const canStart = computed(() => {
+  if (videoInfos.value.length === 0) return false
+  // 检查是否所有视频都在加载中
+  if (videoInfos.value.some(v => v.loading)) return false
+  // 检查是否有失败的
+  if (videoInfos.value.some(v => v.error)) return false
+  return true
+})
+
+// 获取成功的任务列表
+const successfulTasks = computed(() => {
+  return videoInfos.value.filter(v => !v.loading && !v.error)
+})
+
 // 确认添加
-function handleConfirm() {
-  if (urls.value.length === 0) {
-    errorMessage.value = '请添加至少一个视频链接'
-    return
+async function handleConfirm() {
+  if (!canStart.value) return
+
+  isAdding.value = true
+  try {
+    const urls = successfulTasks.value.map(v => v.url)
+    await addYtdlpTasks(urls, ytdlpQuality.value)
+
+    // 创建简化版任务对象返回给父组件
+    const tasks: YtdlpTask[] = successfulTasks.value.map(v => ({
+      id: crypto.randomUUID(),
+      url: v.url,
+      title: v.title,
+      progress: 0,
+      speed: '',
+      status: 'Pending' as YtdlpTaskStatus,
+      message: '等待下载',
+      created_at: new Date().toISOString(),
+      resolution: v.resolution,
+      file_size: v.fileSize,
+    }))
+
+    emit('confirm', tasks)
+  } catch (e: any) {
+    errorMessage.value = '添加任务失败: ' + (e.message || e)
+  } finally {
+    isAdding.value = false
   }
-  emit('confirm', [...urls.value])
 }
 </script>
 
@@ -111,15 +245,32 @@ function handleConfirm() {
             <!-- 错误提示 -->
             <div v-if="errorMessage" class="error-message">{{ errorMessage }}</div>
 
-            <!-- URL 列表 -->
-            <div v-if="urls.length > 0" class="url-list">
+            <!-- 视频信息列表 -->
+            <div v-if="videoInfos.length > 0" class="video-list">
               <div class="list-header">
-                <span>已添加 {{ urls.length }} 个链接</span>
-                <button @click="urls = []" class="clear-all">清空</button>
+                <span>已添加 {{ videoInfos.length }} 个任务</span>
+                <button @click="videoInfos = []" class="clear-all">清空</button>
               </div>
               <div class="list-body">
-                <div v-for="(url, index) in urls" :key="index" class="url-item">
-                  <span class="url-text">{{ url }}</span>
+                <div v-for="(video, index) in videoInfos" :key="video.url" class="video-item">
+                  <div class="video-info">
+                    <div v-if="video.loading" class="loading-info">
+                      <div class="spinner-xs"></div>
+                      <span>获取中...</span>
+                    </div>
+                    <template v-else-if="video.error">
+                      <span class="error-text">{{ video.error }}</span>
+                    </template>
+                    <template v-else>
+                      <div class="video-meta">
+                        <span class="video-title">{{ video.title }}</span>
+                        <div class="video-stats">
+                          <span class="stat-item">{{ video.resolution }}</span>
+                          <span class="stat-item">{{ video.fileSize }}</span>
+                        </div>
+                      </div>
+                    </template>
+                  </div>
                   <button @click="removeUrl(index)" class="remove-url">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                       <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -138,8 +289,18 @@ function handleConfirm() {
 
           <div class="dialog-footer">
             <button @click="$emit('close')" class="btn btn-secondary">取消</button>
-            <button @click="handleConfirm" class="btn btn-primary" :disabled="urls.length === 0">
-              开始添加 {{ urls.length > 0 ? `(${urls.length}个)` : '' }}
+            <button
+              @click="handleConfirm"
+              class="btn btn-primary"
+              :disabled="!canStart || isAdding"
+            >
+              <template v-if="isAdding">
+                <div class="spinner-xs"></div>
+                添加中...
+              </template>
+              <template v-else>
+                开始添加 {{ successfulTasks.length > 0 ? `(${successfulTasks.length}个)` : '' }}
+              </template>
             </button>
           </div>
         </div>
@@ -162,7 +323,7 @@ function handleConfirm() {
 
 .dialog {
   width: 90%;
-  max-width: 560px;
+  max-width: 600px;
   background: #fff;
   border-radius: 16px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
@@ -254,7 +415,7 @@ function handleConfirm() {
   margin-bottom: 16px;
 }
 
-.url-list {
+.video-list {
   border: 1px solid #f0f0f0;
   border-radius: 10px;
   overflow: hidden;
@@ -287,28 +448,65 @@ function handleConfirm() {
 }
 
 .list-body {
-  max-height: 240px;
+  max-height: 300px;
   overflow-y: auto;
 }
 
-.url-item {
+.video-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 16px;
+  padding: 12px 16px;
   border-bottom: 1px solid #f5f5f5;
 }
 
-.url-item:last-child {
+.video-item:last-child {
   border-bottom: none;
 }
 
-.url-text {
+.video-info {
   flex: 1;
+  min-width: 0;
+}
+
+.loading-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+.error-text {
+  color: #dc2626;
+  font-size: 13px;
+}
+
+.video-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.video-title {
+  font-size: 13px;
+  color: #1a1a2e;
+  font-weight: 500;
+  word-break: break-all;
+  line-height: 1.4;
+}
+
+.video-stats {
+  display: flex;
+  gap: 12px;
+}
+
+.stat-item {
   font-size: 12px;
   color: #64748b;
-  word-break: break-all;
-  margin-right: 12px;
+  background: #f5f6f8;
+  padding: 2px 8px;
+  border-radius: 4px;
 }
 
 .remove-url {
@@ -323,6 +521,7 @@ function handleConfirm() {
   justify-content: center;
   transition: all 0.2s;
   flex-shrink: 0;
+  margin-left: 12px;
 }
 
 .remove-url:hover {
@@ -354,6 +553,9 @@ function handleConfirm() {
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .btn-secondary {
@@ -380,6 +582,21 @@ function handleConfirm() {
 .btn-primary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.spinner-xs {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* 过渡动画 */

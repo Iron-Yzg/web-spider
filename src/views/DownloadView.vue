@@ -6,7 +6,6 @@ import { YtdlpTask, YtdlpTaskStatus } from '../types'
 import {
   getConfig,
   getYtdlpTasks,
-  addYtdlpTasks,
   startYtdlpTask,
   stopYtdlpTask,
   deleteYtdlpTask,
@@ -101,16 +100,11 @@ function closeAddDialog() {
   showAddDialog.value = false
 }
 
-// 处理添加任务（从弹窗接收 URL 列表）
-async function handleAddTasks(urls: string[]) {
-  try {
-    await addYtdlpTasks(urls)
-  } catch (e) {
-    console.error('添加任务失败:', e)
-  } finally {
-    closeAddDialog()
-    await refreshTasks()
-  }
+// 处理添加任务（从弹窗接收任务列表）
+async function handleAddTasks(_tasks: YtdlpTask[]) {
+  // 弹窗已经调用了 addYtdlpTasks，所以这里只需要刷新列表
+  closeAddDialog()
+  await refreshTasks()
 }
 
 // 停止任务

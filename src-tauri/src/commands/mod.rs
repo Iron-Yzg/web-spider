@@ -531,8 +531,8 @@ pub async fn get_videos_by_website(
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
-pub async fn get_video_info(url: String) -> Result<YtdlpTask, String> {
-    crate::services::get_video_info(&url).await
+pub async fn get_video_info(url: String, quality: u32) -> Result<YtdlpTask, String> {
+    crate::services::get_video_info(&url, quality).await
 }
 
 #[cfg(feature = "desktop")]
@@ -540,11 +540,12 @@ pub async fn get_video_info(url: String) -> Result<YtdlpTask, String> {
 pub async fn add_ytdlp_tasks(
     db: State<'_, Database>,
     urls: Vec<String>,
+    quality: u32,
 ) -> Result<Vec<YtdlpTask>, String> {
     // 获取视频信息并创建任务
     let mut tasks = Vec::new();
     for url in &urls {
-        match crate::services::get_video_info(url).await {
+        match crate::services::get_video_info(url, quality).await {
             Ok(task) => {
                 // 创建简化版任务
                 let ytdlp_task = YtdlpTask {
@@ -558,6 +559,8 @@ pub async fn add_ytdlp_tasks(
                     message: "等待下载".to_string(),
                     created_at: chrono::Utc::now(),
                     completed_at: None,
+                    resolution: task.resolution,
+                    file_size: task.file_size,
                 };
                 tasks.push(ytdlp_task);
             }

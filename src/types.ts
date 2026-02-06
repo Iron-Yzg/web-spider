@@ -118,6 +118,8 @@ export interface YtdlpTask {
   message: string
   created_at: string
   completed_at?: string
+  resolution?: string      // 视频分辨率 (如 "1920x1080")
+  file_size?: string        // 预估文件大小 (如 "150.5MB")
 }
 
 // yt-dlp 下载结果

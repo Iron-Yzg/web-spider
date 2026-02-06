@@ -98,12 +98,12 @@ export async function getYtdlpTasks(): Promise<YtdlpTask[]> {
   return await invoke<YtdlpTask[]>('get_ytdlp_tasks')
 }
 
-export async function getVideoInfo(url: string): Promise<YtdlpTask> {
-  return await invoke<YtdlpTask>('get_video_info', { url })
+export async function getVideoInfo(url: string, quality: number = 1080): Promise<YtdlpTask> {
+  return await invoke<YtdlpTask>('get_video_info', { url, quality })
 }
 
-export async function addYtdlpTasks(urls: string[]): Promise<void> {
-  await invoke('add_ytdlp_tasks', { urls })
+export async function addYtdlpTasks(urls: string[], quality: number = 1080): Promise<void> {
+  await invoke('add_ytdlp_tasks', { urls, quality })
 }
 
 export async function startYtdlpTask(taskId: string, outputPath: string): Promise<void> {

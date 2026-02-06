@@ -82,16 +82,19 @@ fn parse_progress(output: &str) -> (u8, String, String) {
     (progress, speed, eta)
 }
 
-/// 获取视频信息（不下载）
-pub async fn get_video_info(url: &str) -> Result<YtdlpTask, String> {
+/// 获取视频信息（不下载）- 使用 --print 模板简洁输出
+pub async fn get_video_info(url: &str, quality: u32) -> Result<YtdlpTask, String> {
     let ytdlp_path = get_ytdlp_path();
-    let ffmpeg_path = get_ffmpeg_path();
+
+    // 构建格式字符串: bestvideo[height<=quality]+bestaudio/best
+    let format_str = build_format_string(quality);
 
     let output = Command::new(&ytdlp_path)
         .args(&[
-            "--dump-json",
-            "--no-download",
-            "--ffmpeg-location", ffmpeg_path.to_str().unwrap_or("ffmpeg"),
+            "--skip-download",
+            "--no-check-certificates",
+            "-f", &format_str,
+            "--print", "%(title)s|%(resolution)s|%(filesize_approx)s B|%(ext)s",
             url,
         ])
         .stdout(Stdio::piped())
@@ -105,16 +108,26 @@ pub async fn get_video_info(url: &str) -> Result<YtdlpTask, String> {
         return Err(format!("获取视频信息失败: {}", stderr));
     }
 
-    let json_output = String::from_utf8_lossy(&output.stdout);
+    // 解析输出: "标题|分辨率|文件大小 B|扩展名"
+    let output_str = String::from_utf8_lossy(&output.stdout);
+    let parts: Vec<&str> = output_str.trim().split('|').collect();
 
-    // 解析 JSON
-    let json: serde_json::Value = serde_json::from_str(&json_output)
-        .map_err(|e| format!("解析视频信息失败: {}", e))?;
+    if parts.len() < 4 {
+        return Err(format!("解析视频信息失败: {}", output_str));
+    }
 
-    let title = json.get("title")
-        .and_then(|v| v.as_str())
-        .unwrap_or("未知标题")
-        .to_string();
+    let title = parts[0].to_string();
+    let resolution = parts[1].to_string();
+    let file_size_approx = parts[2].to_string();
+    let _ext = parts[3].to_string();
+
+    // 格式化文件大小
+    let file_size = if file_size_approx.ends_with(" B") && file_size_approx != "None B" {
+        let bytes: u64 = file_size_approx.trim_end_matches(" B").parse().unwrap_or(0);
+        format_file_size(bytes)
+    } else {
+        "未知大小".to_string()
+    };
 
     Ok(YtdlpTask {
         id: uuid::Uuid::new_v4().to_string(),
@@ -127,7 +140,26 @@ pub async fn get_video_info(url: &str) -> Result<YtdlpTask, String> {
         message: "等待下载".to_string(),
         created_at: chrono::Utc::now(),
         completed_at: None,
+        resolution,
+        file_size,
     })
+}
+
+/// 格式化文件大小
+fn format_file_size(bytes: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = KB * 1024;
+    const GB: u64 = MB * 1024;
+
+    if bytes >= GB {
+        format!("{:.2}GB", bytes as f64 / GB as f64)
+    } else if bytes >= MB {
+        format!("{:.2}MB", bytes as f64 / MB as f64)
+    } else if bytes >= KB {
+        format!("{:.2}KB", bytes as f64 / KB as f64)
+    } else {
+        format!("{}B", bytes)
+    }
 }
 
 /// 创建软链接的跨平台辅助函数
@@ -291,6 +323,8 @@ pub async fn download_video_with_continue(
         message: "正在初始化...".to_string(),
         created_at: chrono::Utc::now(),
         completed_at: None,
+        resolution: String::new(),
+        file_size: String::new(),
     });
 
     let mut child = Command::new(&ytdlp_path)
@@ -336,6 +370,8 @@ pub async fn download_video_with_continue(
                                 speed: speed.clone(),
                                 file_path: None,
                                 status: YtdlpTaskStatus::Downloading,
+                                resolution: String::new(),
+                                file_size: String::new(),
                                 message: if progress < 100 {
                                     format!("下载中 {}%", progress)
                                 } else {
