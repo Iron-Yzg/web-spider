@@ -188,7 +188,7 @@ use crate::services::{batch_download_concurrent, Scraper, ScraperFactory, Scrape
 pub async fn scrape_video(
     window: WebviewWindow,
     db: State<'_, Database>,
-    video_id: String,
+    url: String,
     website_id: Option<String>,
 ) -> Result<ScrapeResult, String> {
     // 获取网站配置
@@ -226,7 +226,7 @@ pub async fn scrape_video(
 
     // 调用 scrape_all 获取所有结果（SRL 爬虫会返回多个视频）
     // 注意：不再检查整个页面是否已爬取，因为 SRL 爬虫可能返回多个新视频
-    let results = scraper.scrape_all(&video_id, {
+    let results = scraper.scrape_all(&url, {
         let window = window.clone();
         move |log: String| {
             let _ = window.emit("scrape-log", log);
@@ -265,8 +265,8 @@ pub async fn scrape_video(
                 continue;
             }
 
-            // 使用爬虫返回的实际视频ID，如果没有则使用输入的页码
-            let actual_video_id = result.video_id.clone().unwrap_or_else(|| video_id.clone());
+            // 使用爬虫返回的实际视频ID，如果没有则使用输入的URL
+            let actual_video_id = result.video_id.clone().unwrap_or_else(|| url.clone());
 
             let video = VideoItem {
                 id: uuid::Uuid::new_v4().to_string(),
@@ -305,10 +305,10 @@ pub async fn scrape_video(
     if success_count > 0 {
         Ok(ScrapeResult {
             success: true,
-            name: format!("第{}页", video_id),
+            name: format!("第{}页", url),
             m3u8_url: String::new(),
             message: format!("成功爬取 {} / {} 个视频 (新增: {}, 已存在: {})", success_count, total_count, saved_count, duplicate_count),
-            video_id: Some(video_id.clone()),
+            video_id: Some(url.clone()),
             view_count: None,
             favorite_count: None,
             cover_url: None,
@@ -316,10 +316,10 @@ pub async fn scrape_video(
     } else if let Some(first_fail) = results.iter().find(|r| !r.success) {
         Ok(ScrapeResult {
             success: false,
-            name: format!("第{}页", video_id),
+            name: format!("第{}页", url),
             m3u8_url: String::new(),
             message: first_fail.message.clone(),
-            video_id: Some(video_id.clone()),
+            video_id: Some(url.clone()),
             view_count: None,
             favorite_count: None,
             cover_url: None,
@@ -327,10 +327,10 @@ pub async fn scrape_video(
     } else {
         Ok(ScrapeResult {
             success: false,
-            name: format!("第{}页", video_id),
+            name: format!("第{}页", url),
             m3u8_url: String::new(),
             message: "爬取失败".to_string(),
-            video_id: Some(video_id.clone()),
+            video_id: Some(url.clone()),
             view_count: None,
             favorite_count: None,
             cover_url: None,
