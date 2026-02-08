@@ -29,6 +29,7 @@ thiserror = "1"
 # headless_chrome 仅桌面端需要
 headless_chrome = { version = "1.0", optional = true }
 url = "2"
+percent-encoding = "2"
 sqlx = { version = "0.7", features = ["sqlite", "runtime-tokio"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"

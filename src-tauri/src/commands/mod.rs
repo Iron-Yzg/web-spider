@@ -920,6 +920,43 @@ pub async fn get_media_info(app_handle: tauri::AppHandle, path: String) -> Resul
     Ok((resolution, duration, file_size))
 }
 
+/// 使用 ffmpeg 提取视频第一帧作为封面图
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub async fn extract_thumbnail(app_handle: tauri::AppHandle, video_path: String) -> Result<String, String> {
+    use tokio::process::Command;
+    use std::path::PathBuf;
+
+    // 获取 ffmpeg 路径
+    let ffmpeg_path = get_sidecar_path(&app_handle, "ffmpeg")?;
+
+    // 生成缩略图路径（与视频同目录，同名但扩展名为 .jpg）
+    let thumbnail_path = PathBuf::from(video_path.clone()).with_extension("jpg");
+
+    // 使用 ffmpeg 提取第一帧
+    let output = Command::new(&ffmpeg_path)
+        .args(&[
+            "-y",                          // 覆盖已存在的文件
+            "-i", &video_path,
+            "-vframes", "1",              // 只提取第一帧
+            "-q:v", "2",                  // 质量设置
+            thumbnail_path.to_string_lossy().as_ref(),
+        ])
+        .output()
+        .await
+        .map_err(|e| format!("执行 ffmpeg 失败: {}", e))?;
+
+    if output.status.success() && thumbnail_path.exists() {
+        Ok(thumbnail_path.to_string_lossy().to_string())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        tracing::warn!("[THUMBNAIL] 生成封面图失败: {}", stderr);
+        // 删除失败的缩略图文件
+        let _ = std::fs::remove_file(&thumbnail_path);
+        Err(format!("生成封面图失败: {}", stderr))
+    }
+}
+
 /// 格式化文件大小
 fn format_file_size(bytes: u64) -> String {
     if bytes == 0 {
@@ -930,4 +967,24 @@ fn format_file_size(bytes: u64) -> String {
     let i = (bytes as f64).log(k).floor() as usize;
     let size = bytes as f64 / k.powi(i as i32);
     format!("{} {}", size.round() as u64, sizes[i])
+}
+
+// ==================== 数据库版本地视频管理 ====================
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub async fn get_local_videos(db: State<'_, Database>) -> Result<Vec<LocalVideo>, String> {
+    db.get_all_local_videos().await.map_err(|e| e.to_string())
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub async fn add_local_video(db: State<'_, Database>, video: LocalVideo) -> Result<(), String> {
+    db.add_local_video(&video).await.map_err(|e| e.to_string())
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub async fn delete_local_video_db(db: State<'_, Database>, id: String) -> Result<(), String> {
+    db.delete_local_video(&id).await.map_err(|e| e.to_string())
 }

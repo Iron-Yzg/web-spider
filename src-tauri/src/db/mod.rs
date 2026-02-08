@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
 use std::str::FromStr;
 
-pub use crate::models::{AppConfig, LocalStorageItem, VideoItem, VideoStatus, Website, YtdlpConfig, YtdlpTask, YtdlpTaskStatus};
+pub use crate::models::{AppConfig, LocalStorageItem, LocalVideo, VideoItem, VideoStatus, Website, YtdlpConfig, YtdlpTask, YtdlpTaskStatus};
 
 /// 从数据库行解析 VideoItem
 fn row_to_video_item(row: &SqliteRow) -> Result<VideoItem, sqlx::Error> {
@@ -197,6 +197,28 @@ impl Database {
         // 创建索引
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_ytdlp_tasks_status ON ytdlp_tasks(status)").execute(&self.pool).await?;
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_ytdlp_tasks_created_at ON ytdlp_tasks(created_at DESC)").execute(&self.pool).await?;
+
+        // 本地视频表
+        sqlx::query(r#"
+            CREATE TABLE IF NOT EXISTS local_videos (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                file_path TEXT NOT NULL,
+                file_size TEXT DEFAULT '',
+                duration TEXT DEFAULT '',
+                resolution TEXT DEFAULT '',
+                added_at TEXT NOT NULL
+            )
+        "#).execute(&self.pool).await?;
+
+        // 删除旧的 thumbnail_path 列（SQLite 不支持 DROP COLUMN，通过重命名表实现）
+        // 这里我们只删除索引，字段保留但不使用
+        let _ = sqlx::query("DROP INDEX IF EXISTS idx_local_videos_thumbnail")
+            .execute(&self.pool)
+            .await;
+
+        // 创建索引
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_local_videos_added_at ON local_videos(added_at DESC)").execute(&self.pool).await?;
 
         Ok(())
     }
@@ -840,6 +862,83 @@ impl Database {
             .execute(&self.pool)
             .await?;
         Ok(())
+    }
+
+    // ===== 本地视频管理 =====
+
+    /// 从数据库行解析 LocalVideo
+    fn row_to_local_video(row: &SqliteRow) -> Result<LocalVideo, sqlx::Error> {
+        let id: String = row.try_get("id")?;
+        let name: String = row.try_get("name")?;
+        let file_path: String = row.try_get("file_path")?;
+        let file_size: String = row.try_get("file_size").unwrap_or_default();
+        let duration: String = row.try_get("duration").unwrap_or_default();
+        let resolution: String = row.try_get("resolution").unwrap_or_default();
+        let added_at_str: String = row.try_get("added_at")?;
+        let added_at: DateTime<Utc> = added_at_str.parse()
+            .unwrap_or_else(|_| Utc::now());
+
+        Ok(LocalVideo {
+            id,
+            name,
+            file_path,
+            file_size,
+            duration,
+            resolution,
+            added_at,
+        })
+    }
+
+    /// 添加本地视频
+    pub async fn add_local_video(&self, video: &LocalVideo) -> Result<(), sqlx::Error> {
+        let added_at_str = video.added_at.to_rfc3339();
+        sqlx::query(r#"
+            INSERT OR REPLACE INTO local_videos (id, name, file_path, file_size, duration, resolution, added_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        "#)
+            .bind(video.id.clone())
+            .bind(video.name.clone())
+            .bind(video.file_path.clone())
+            .bind(video.file_size.clone())
+            .bind(video.duration.clone())
+            .bind(video.resolution.clone())
+            .bind(added_at_str)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// 获取所有本地视频
+    pub async fn get_all_local_videos(&self) -> Result<Vec<LocalVideo>, sqlx::Error> {
+        let rows = sqlx::query("SELECT id, name, file_path, file_size, duration, resolution, added_at FROM local_videos ORDER BY added_at DESC")
+            .fetch_all(&self.pool)
+            .await?;
+
+        let mut videos = Vec::new();
+        for row in rows {
+            videos.push(Self::row_to_local_video(&row)?);
+        }
+        Ok(videos)
+    }
+
+    /// 删除本地视频
+    pub async fn delete_local_video(&self, id: &str) -> Result<(), sqlx::Error> {
+        sqlx::query("DELETE FROM local_videos WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// 检查本地视频是否已存在（通过文件路径）
+    pub async fn local_video_exists(&self, file_path: &str) -> Result<bool, sqlx::Error> {
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM local_videos WHERE file_path = ?"
+        )
+            .bind(file_path)
+            .fetch_one(&self.pool)
+            .await?;
+        Ok(count > 0)
     }
 
     /// 关闭数据库连接

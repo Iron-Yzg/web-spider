@@ -3,11 +3,13 @@ import { ref, onMounted } from 'vue'
 import { invoke, convertFileSrc } from '@tauri-apps/api/core'
 import type { LocalVideo } from '../types'
 import VideoPlayer from '../components/VideoPlayer.vue'
+import { getLocalVideos, addLocalVideo, deleteLocalVideo as deleteLocalVideoApi } from '../services/api'
 
 const videos = ref<LocalVideo[]>([])
 const searchQuery = ref('')
 const filteredVideos = ref<LocalVideo[]>([])
 const isLoading = ref(false)
+const videoRefs = ref<Record<string, HTMLVideoElement>>({})
 const selectDialog = ref<{ visible: boolean, message: string, onConfirm: (() => void) | null }>({
   visible: false,
   message: '',
@@ -21,40 +23,18 @@ const playerTitle = ref('')
 const playerPlaylist = ref<LocalVideo[]>([])
 const currentVideoIndex = ref(0)
 
-// 获取应用数据目录
-async function getAppDataDir(): Promise<string> {
-  return await invoke<string>('get_app_data_dir')
-}
-
-// 加载视频列表
+// 加载视频列表（使用数据库）
 async function loadVideos() {
   try {
-    const dataDir = await getAppDataDir()
-    const jsonPath = `${dataDir}/local_videos.json`
-
-    try {
-      const data = await invoke<LocalVideo[]>('read_local_videos', { path: jsonPath })
-      videos.value = data || []
-    } catch {
-      // 文件不存在，创建空列表
-      videos.value = []
-    }
-
+    isLoading.value = true
+    const data = await getLocalVideos()
+    videos.value = data || []
     filterVideos()
   } catch (e) {
     console.error('加载视频列表失败:', e)
-  }
-}
-
-// 保存视频列表
-async function saveVideos() {
-  try {
-    const dataDir = await getAppDataDir()
-    const jsonPath = `${dataDir}/local_videos.json`
-
-    await invoke('write_local_videos', { path: jsonPath, data: videos.value })
-  } catch (e) {
-    console.error('保存视频列表失败:', e)
+    videos.value = []
+  } finally {
+    isLoading.value = false
   }
 }
 
@@ -87,12 +67,13 @@ async function selectVideos() {
         // 检查是否已存在
         const exists = videos.value.some(v => v.file_path === filePath)
         if (!exists) {
+          // 添加到数据库
+          await addLocalVideo(info)
           videos.value.push(info)
         }
       }
     }
 
-    await saveVideos()
     filterVideos()
   } catch (e) {
     console.error('选择视频失败:', e)
@@ -149,6 +130,15 @@ function formatFileSize(bytes: number): string {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
 }
 
+// 视频加载完成后跳转到 0.1 秒显示第一帧
+function handleVideoLoaded(videoId: string) {
+  const video = videoRefs.value[videoId]
+  if (video) {
+    video.currentTime = 0.1  // 跳转到 0.1 秒（避免黑屏）
+    video.pause()
+  }
+}
+
 // 播放视频
 function playVideo(video: LocalVideo) {
   // 使用 convertFileSrc 转换本地路径为 asset URL
@@ -176,12 +166,8 @@ function deleteVideo(id: string) {
     visible: true,
     message: '确定要删除这个视频吗？',
     onConfirm: async () => {
-      const index = videos.value.findIndex(v => v.id === id)
-      if (index > -1) {
-        videos.value.splice(index, 1)
-        await saveVideos()
-        filterVideos()
-      }
+      await deleteLocalVideoApi(id)
+      await loadVideos()
     }
   }
 }
@@ -192,12 +178,8 @@ async function handleDeleteCurrent() {
   if (!currentVideo) return
 
   // 直接删除，不询问
-  const index = videos.value.findIndex(v => v.id === currentVideo.id)
-  if (index > -1) {
-    videos.value.splice(index, 1)
-    await saveVideos()
-    filterVideos()
-  }
+  await deleteLocalVideoApi(currentVideo.id)
+  await loadVideos()
 
   // 从播放列表中移除
   playerPlaylist.value.splice(currentVideoIndex.value, 1)
@@ -298,6 +280,7 @@ onMounted(async () => {
 
       <div v-else class="video-table">
         <div class="table-header">
+          <span class="col-thumbnail">封面</span>
           <span class="col-name">名称</span>
           <span class="col-size">大小</span>
           <span class="col-duration">时长</span>
@@ -308,6 +291,17 @@ onMounted(async () => {
 
         <div class="table-body">
           <div v-for="video in filteredVideos" :key="video.id" class="table-row">
+            <div class="col-thumbnail">
+              <video
+                :ref="el => videoRefs[video.id] = el as HTMLVideoElement"
+                :src="convertFileSrc(video.file_path)"
+                class="cover-video"
+                muted
+                preload="auto"
+                @loadeddata="handleVideoLoaded(video.id)"
+                @click="playVideo(video)"
+              ></video>
+            </div>
             <div class="col-name">
               <span class="video-name" :title="video.name">{{ video.name }}</span>
               <span class="video-path" :title="video.file_path">{{ video.file_path }}</span>
@@ -513,6 +507,30 @@ onMounted(async () => {
 
 .table-row:hover {
   background: #fafbfc;
+}
+
+.col-thumbnail {
+  width: 60px;
+  height: 34px;
+  flex-shrink: 0;
+  margin-right: 12px;
+  position: relative;
+  overflow: hidden;
+  border-radius: 4px;
+  background: #f5f5f5;
+}
+
+.cover-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 4px;
+  cursor: pointer;
+  background: #000;
+}
+
+.cover-video:hover {
+  opacity: 0.9;
 }
 
 .col-name {

@@ -112,18 +112,24 @@ watch(selectedWebsite, async () => {
 })
 
 onMounted(async () => {
-  await Promise.all([
-    loadVideos(),
-    loadWebsites()
-  ])
+  // 先加载网站列表，确保 selectedWebsiteName 有值
+  await loadWebsites()
+  // 再加载视频列表
+  await loadVideos()
 
   unlistenVideos = await listen<VideoItem[]>('videos-updated', (event) => {
     const newVideos = event.payload
     // 保留正在下载的视频的进度状态
     const currentDownloadingIds = Object.keys(downloadProgress.value)
 
+    // 按网站筛选：如果选择了网站，只保留该网站的视频
+    let filteredByWebsite = newVideos
+    if (selectedWebsiteName.value) {
+      filteredByWebsite = newVideos.filter(v => v.website_name === selectedWebsiteName.value)
+    }
+
     // 创建新数组，保留正在下载视频的本地状态
-    const updatedVideos = newVideos.map(newVideo => {
+    const updatedVideos = filteredByWebsite.map(newVideo => {
       // 如果这个视频正在下载，检查本地状态
       if (currentDownloadingIds.includes(newVideo.id)) {
         const existingVideo = videos.value.find(v => v.id === newVideo.id)

@@ -116,14 +116,14 @@ pub fn get_sidecar_bin_dir(_app_handle: &AppHandle, name: &str) -> Result<PathBu
         .ok_or_else(|| String::from("无法获取 exe 所在目录"))?
         .to_path_buf();
 
-    tracing::debug!("[sidecar] get_sidecar_bin_dir: exe={}, bin_dir={}", exe_path.display(), bin_dir.display());
+    tracing::info!("[sidecar] get_sidecar_bin_dir: exe={}, bin_dir={}", exe_path.display(), bin_dir.display());
 
     // 优先检查二进制文件是否直接在 bin_dir 下（macOS app bundle 场景）
     let possible_names = get_sidecar_names(name);
     for file_name in &possible_names {
         let candidate = bin_dir.join(file_name);
         if candidate.exists() {
-            tracing::debug!("[sidecar] 找到 {} 在: {}", name, bin_dir.display());
+            tracing::info!("[sidecar] 找到 {} 在: {}", name, bin_dir.display());
             return Ok(bin_dir);
         }
     }
@@ -134,7 +134,7 @@ pub fn get_sidecar_bin_dir(_app_handle: &AppHandle, name: &str) -> Result<PathBu
         for file_name in &possible_names {
             let candidate = binaries_dir.join(file_name);
             if candidate.exists() {
-                tracing::debug!("[sidecar] 找到 {} 在: {}", name, binaries_dir.display());
+                tracing::info!("[sidecar] 找到 {} 在: {}", name, binaries_dir.display());
                 return Ok(binaries_dir);
             }
         }

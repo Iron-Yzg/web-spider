@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
-import type { Website, AppConfig, ScrapeResult, PaginatedVideos, YtdlpTask, YtdlpConfig, ScraperInfo } from '../types'
+import type { Website, AppConfig, ScrapeResult, PaginatedVideos, YtdlpTask, YtdlpConfig, ScraperInfo, LocalVideo } from '../types'
 
 // ==================== 通用 API ====================
 
@@ -128,4 +128,18 @@ export async function cleanupYtdlpTasks(): Promise<void> {
 
 export async function openPath(path: string): Promise<void> {
   await invoke('open_path', { path })
+}
+
+// ==================== 本地视频管理 API ====================
+
+export async function getLocalVideos(): Promise<LocalVideo[]> {
+  return await invoke<LocalVideo[]>('get_local_videos')
+}
+
+export async function addLocalVideo(video: LocalVideo): Promise<void> {
+  await invoke('add_local_video', { video })
+}
+
+export async function deleteLocalVideo(id: string): Promise<void> {
+  await invoke('delete_local_video_db', { id })
 }

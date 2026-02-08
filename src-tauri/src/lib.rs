@@ -211,6 +211,11 @@ pub fn run() {
                 commands::write_local_videos,
                 commands::get_file_stats,
                 commands::get_media_info,
+                commands::extract_thumbnail,
+                // 数据库版本地视频命令
+                commands::get_local_videos,
+                commands::add_local_video,
+                commands::delete_local_video_db,
             ]);
     }
 
