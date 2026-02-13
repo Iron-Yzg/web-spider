@@ -12,9 +12,9 @@ env:
   RUST_VERSION: stable
 
 jobs:
-  # 基础检查（Linux）- 快速验证代码编译
+  # 基础检查 - 快速验证代码编译
   check:
-    runs-on: ubuntu-latest
+    runs-on: macos-14
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -30,10 +30,9 @@ jobs:
         working-directory: src-tauri
         run: cargo check --verbose
 
-  # 构建 macOS dmg 安装包
+  # 构建 macOS ARM64 dmg 安装包
   build-macos:
     runs-on: macos-14  # macOS ARM64 (Apple Silicon)
-    # 需要手动触发或标签推送才运行
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     steps:
       - name: Checkout repository
@@ -48,17 +47,12 @@ jobs:
 
       - name: Install dependencies
         working-directory: src-tauri
-        run: |
-          # 安装 Tauri CLI
-          cargo install tauri-cli
+        run: cargo install tauri-cli
 
       - name: Build dmg
         working-directory: src-tauri
-        run: |
-          cargo tauri build --bundles dmg
+        run: cargo tauri build --bundles dmg
         env:
-          # 无代码签名版本（仅用于测试）
-          # 如需正式发布，需要设置 APPLE_* 环境变量
           TAURI_SIGNING_PRIVATE_KEY: ''
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
 
@@ -68,9 +62,9 @@ jobs:
           name: web-spider-macos-arm64
           path: src-tauri/target/release/bundle/dmg/
 
-  # 构建 macOS x64 dmg 安装包
-  build-macos-x64:
-    runs-on: macos-13  # macOS Intel
+  # 构建 Windows 安装包
+  build-windows:
+    runs-on: windows-latest
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     steps:
       - name: Checkout repository
@@ -85,26 +79,21 @@ jobs:
 
       - name: Install dependencies
         working-directory: src-tauri
-        run: |
-          cargo install tauri-cli
+        run: cargo install tauri-cli
 
-      - name: Build dmg
+      - name: Build nsis
         working-directory: src-tauri
-        run: |
-          cargo tauri build --bundles dmg
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ''
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
+        run: cargo tauri build --bundles nsis
 
-      - name: Upload dmg artifact
+      - name: Upload nsis artifact
         uses: actions/upload-artifact@v4
         with:
-          name: web-spider-macos-x64
-          path: src-tauri/target/release/bundle/dmg/
+          name: web-spider-windows-x64
+          path: src-tauri/target/release/bundle/nsis/
 
   # 创建发布版本
   release:
-    needs: [build-macos, build-macos-x64]
+    needs: [build-macos, build-windows]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:

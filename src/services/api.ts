@@ -114,10 +114,6 @@ export async function stopYtdlpTask(taskId: string): Promise<void> {
   await invoke('stop_ytdlp_task', { taskId })
 }
 
-export async function cancelYtdlpTask(taskId: string): Promise<void> {
-  await invoke('cancel_ytdlp_task', { taskId })
-}
-
 export async function deleteYtdlpTask(taskId: string): Promise<void> {
   await invoke('delete_ytdlp_task', { taskId })
 }

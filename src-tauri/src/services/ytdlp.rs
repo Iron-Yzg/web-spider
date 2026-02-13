@@ -15,6 +15,20 @@ static YTDLP_TASKS: std::sync::LazyLock<Mutex<Vec<YtdlpTask>>> =
 static RUNNING_PIDS: std::sync::LazyLock<Mutex<std::collections::HashMap<String, u32>>> =
     std::sync::LazyLock::new(|| Mutex::new(std::collections::HashMap::new()));
 
+/// 杀死指定 PID 的进程（macOS 使用 kill 命令，Windows 使用 taskkill）
+fn kill_process(pid: u32) {
+    if cfg!(target_os = "windows") {
+        let _ = std::process::Command::new("taskkill")
+            .args(&["/F", "/PID", &pid.to_string()])
+            .output();
+    } else {
+        let _ = std::process::Command::new("kill")
+            .arg("-9")
+            .arg(pid.to_string())
+            .output();
+    }
+}
+
 /// 解析 yt-dlp 输出获取进度
 fn parse_progress(output: &str) -> (u8, String, String) {
     let mut progress = 0u8;
@@ -202,19 +216,7 @@ pub async fn download_video_with_continue(
     let mut old_pids = RUNNING_PIDS.lock().await;
     if let Some(old_pid) = old_pids.remove(task_id) {
         tracing::info!("[yt-dlp] 发现旧进程 PID: {}，正在杀死...", old_pid);
-        #[cfg(target_os = "macos")]
-        {
-            let _ = std::process::Command::new("kill")
-                .arg("-9")
-                .arg(old_pid.to_string())
-                .output();
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            unsafe {
-                libc::kill(old_pid as libc::pid_t, libc::SIGKILL);
-            }
-        }
+        kill_process(old_pid);
         tracing::info!("[yt-dlp] 已发送 kill 信号，等待进程完全退出...");
         // 等待进程完全退出
         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
@@ -495,34 +497,7 @@ pub fn cancel_task(task_id: &str) -> bool {
         let mut pids = RUNNING_PIDS.lock().await;
         if let Some(pid) = pids.remove(task_id) {
             tracing::info!("[yt-dlp] 杀死进程: {} (PID: {})", task_id, pid);
-
-            // 在 macOS 上使用 kill 命令
-            #[cfg(target_os = "macos")]
-            {
-                let output = std::process::Command::new("kill")
-                    .arg("-9")
-                    .arg(pid.to_string())
-                    .output();
-                match output {
-                    Ok(o) => {
-                        if !o.status.success() {
-                            tracing::info!("[yt-dlp] kill 命令失败: {}", String::from_utf8_lossy(&o.stderr));
-                        }
-                    }
-                    Err(e) => {
-                        tracing::info!("[yt-dlp] 执行 kill 失败: {}", e);
-                    }
-                }
-            }
-
-            // 在 Rust 的其他平台上尝试使用 kill
-            #[cfg(not(target_os = "macos"))]
-            {
-                use std::os::unix::process::ProcessId;
-                unsafe {
-                    libc::kill(pid as libc::pid_t, libc::SIGKILL);
-                }
-            }
+            kill_process(pid);
 
             return Some(true);
         }
@@ -544,14 +519,6 @@ pub fn cancel_task(task_id: &str) -> bool {
 /// 获取所有任务
 pub async fn get_all_tasks() -> Vec<YtdlpTask> {
     YTDLP_TASKS.lock().await.clone()
-}
-
-/// 根据ID获取任务
-pub async fn get_task_by_id(task_id: &str) -> Option<YtdlpTask> {
-    YTDLP_TASKS.lock().await
-        .iter()
-        .find(|t| t.id == task_id)
-        .cloned()
 }
 
 /// 清理已完成/失败的任务

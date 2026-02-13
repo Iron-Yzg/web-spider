@@ -10,7 +10,6 @@ use crate::models::{
     YtdlpConfig, YtdlpTask, YtdlpTaskStatus,
 };
 use crate::services::get_sidecar_path;
-use std::path::PathBuf;
 
 /// 清理下载临时文件（.part 文件等）
 fn clean_temp_files(output_path: &str, title: &str) {
@@ -47,6 +46,8 @@ fn clean_temp_files(output_path: &str, title: &str) {
                     }
                 }
             }
+        } else {
+            tracing::info!("[rust] 忽略非目录项");
         }
     }
 
@@ -75,7 +76,6 @@ pub async fn update_ytdlp_config(db: State<'_, Database>, config: YtdlpConfig) -
     db.save_ytdlp_config(&config).await.map_err(|e| e.to_string())
 }
 
-#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn select_directory(window: WebviewWindow) -> Result<Option<String>, String> {
     // 使用 file dialog 选择文件夹
@@ -89,12 +89,6 @@ pub async fn select_directory(window: WebviewWindow) -> Result<Option<String>, S
         Some(path) => Ok(Some(path.to_string())),
         None => Ok(None),
     }
-}
-
-#[cfg(not(feature = "desktop"))]
-#[tauri::command]
-pub fn select_directory() -> Result<String, String> {
-    Err("DIALOG_REQUIRED".to_string())
 }
 
 // 打开路径（文件或文件夹）
@@ -121,14 +115,9 @@ pub fn open_path(path: String) -> Result<(), String> {
             .args(&["/c", "start", &actual_path])
             .spawn()
             .map(|_| ())
-    } else if cfg!(target_os = "macos") {
-        std::process::Command::new("open")
-            .arg(&actual_path)
-            .spawn()
-            .map(|_| ())
     } else {
-        // Linux
-        std::process::Command::new("xdg-open")
+        // macOS
+        std::process::Command::new("open")
             .arg(&actual_path)
             .spawn()
             .map(|_| ())
@@ -145,12 +134,6 @@ pub fn open_path(path: String) -> Result<(), String> {
             Err(msg)
         }
     }
-}
-
-// 获取所有视频（从数据库）
-#[tauri::command]
-pub async fn get_videos(db: State<'_, Database>) -> Result<Vec<VideoItem>, String> {
-    db.get_all_videos().await.map_err(|e| e.to_string())
 }
 
 // 分页获取视频
@@ -180,10 +163,8 @@ pub async fn search_videos(
 
 // ===== 桌面端爬虫相关命令 =====
 
-#[cfg(feature = "desktop")]
 use crate::services::{batch_download_concurrent, Scraper, ScraperFactory, ScraperInfo, get_available_scrapers};
 
-#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn scrape_video(
     window: WebviewWindow,
@@ -343,7 +324,6 @@ pub async fn delete_video(db: State<'_, Database>, video_id: String) -> Result<(
     db.delete_video(&video_id).await.map_err(|e| e.to_string())
 }
 
-#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn download_video(
     app_handle: tauri::AppHandle,
@@ -355,19 +335,16 @@ pub async fn download_video(
     batch_download(app_handle, window, db, vec![video_id]).await
 }
 
-#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn clear_downloaded(db: State<'_, Database>) -> Result<(), String> {
     db.clear_downloaded().await.map_err(|e| e.to_string())
 }
 
-#[cfg(feature = "desktop")]
 #[tauri::command]
 pub fn check_ffmpeg(app_handle: tauri::AppHandle) -> bool {
     crate::services::check_ffmpeg(&app_handle)
 }
 
-#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn batch_download(
     app_handle: tauri::AppHandle,
@@ -493,19 +470,16 @@ pub async fn get_website_by_name(db: State<'_, Database>, name: String) -> Resul
     db.get_website_by_name(&name).await.map_err(|e| e.to_string())
 }
 
-#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn save_website(db: State<'_, Database>, website: Website) -> Result<(), String> {
     db.save_website(&website).await.map_err(|e| e.to_string())
 }
 
-#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn delete_website(db: State<'_, Database>, website_id: String) -> Result<(), String> {
     db.delete_website(&website_id).await.map_err(|e| e.to_string())
 }
 
-#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn set_default_website(db: State<'_, Database>, website_id: String) -> Result<(), String> {
     db.set_default_website(&website_id).await.map_err(|e| e.to_string())
@@ -513,7 +487,6 @@ pub async fn set_default_website(db: State<'_, Database>, website_id: String) ->
 
 // ===== 爬虫管理命令 =====
 
-#[cfg(feature = "desktop")]
 #[tauri::command]
 pub fn get_scrapers() -> Vec<ScraperInfo> {
     get_available_scrapers()
@@ -533,13 +506,11 @@ pub async fn get_videos_by_website(
 
 // ==================== yt-dlp 下载命令 ====================
 
-#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn get_video_info(app_handle: tauri::AppHandle, url: String, quality: u32) -> Result<YtdlpTask, String> {
     crate::services::get_video_info(&app_handle, &url, quality).await
 }
 
-#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn add_ytdlp_tasks(
     app_handle: tauri::AppHandle,
@@ -587,21 +558,6 @@ pub async fn add_ytdlp_tasks(
     Ok(tasks)
 }
 
-#[cfg(feature = "desktop")]
-#[tauri::command]
-pub async fn cancel_ytdlp_task(task_id: String, db: State<'_, Database>) -> Result<bool, String> {
-    let cancelled = crate::services::cancel_task(&task_id);
-    if cancelled {
-        if let Some(mut task) = crate::services::get_task_by_id(&task_id).await {
-            task.status = YtdlpTaskStatus::Cancelled;
-            task.message = "已取消".to_string();
-            let _ = db.save_ytdlp_task(&task).await.map_err(|e| e.to_string());
-        }
-    }
-    Ok(cancelled)
-}
-
-#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn delete_ytdlp_task(task_id: String, db: State<'_, Database>) -> Result<(), String> {
     // 从数据库删除
@@ -612,7 +568,6 @@ pub async fn delete_ytdlp_task(task_id: String, db: State<'_, Database>) -> Resu
     Ok(())
 }
 
-#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn stop_ytdlp_task(task_id: String, db: State<'_, Database>) -> Result<(), String> {
     // 取消下载进程
@@ -636,7 +591,6 @@ pub async fn stop_ytdlp_task(task_id: String, db: State<'_, Database>) -> Result
     Ok(())
 }
 
-#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn start_ytdlp_task(
     app_handle: tauri::AppHandle,
@@ -746,7 +700,6 @@ pub async fn start_ytdlp_task(
     Ok(())
 }
 
-#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn get_ytdlp_tasks(db: State<'_, Database>) -> Result<Vec<YtdlpTask>, String> {
     // 直接从数据库获取所有任务
@@ -754,7 +707,6 @@ pub async fn get_ytdlp_tasks(db: State<'_, Database>) -> Result<Vec<YtdlpTask>, 
     Ok(tasks)
 }
 
-#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn cleanup_ytdlp_tasks(db: State<'_, Database>) -> Result<(), String> {
     // 清理内存中的任务
@@ -766,28 +718,6 @@ pub async fn cleanup_ytdlp_tasks(db: State<'_, Database>) -> Result<(), String> 
 
 // ==================== 本地视频管理命令 ====================
 
-#[cfg(feature = "desktop")]
-#[tauri::command]
-pub async fn get_app_data_dir() -> Result<String, String> {
-    // 获取应用数据目录
-    let data_dir = if let Some(home_dir) = dirs::home_dir() {
-        if home_dir.join("Library/Application Support").exists() {
-            home_dir.join("Library/Application Support/web-spider")
-        } else if let Some(data_dir) = dirs::data_dir() {
-            data_dir.join("web-spider")
-        } else {
-            PathBuf::from("./data")
-        }
-    } else if let Some(data_dir) = dirs::data_dir() {
-        data_dir.join("web-spider")
-    } else {
-        PathBuf::from("./data")
-    };
-
-    Ok(data_dir.to_string_lossy().to_string())
-}
-
-#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn select_video_files(window: WebviewWindow) -> Result<Option<Vec<String>>, String> {
     // 使用 file dialog 选择视频文件
@@ -807,27 +737,6 @@ pub async fn select_video_files(window: WebviewWindow) -> Result<Option<Vec<Stri
     }
 }
 
-#[cfg(feature = "desktop")]
-#[tauri::command]
-pub async fn read_local_videos(path: String) -> Result<Vec<LocalVideo>, String> {
-    let content = std::fs::read_to_string(&path)
-        .map_err(|e| format!("读取文件失败: {}", e))?;
-    let data: Vec<LocalVideo> = serde_json::from_str(&content)
-        .map_err(|e| format!("解析JSON失败: {}", e))?;
-    Ok(data)
-}
-
-#[cfg(feature = "desktop")]
-#[tauri::command]
-pub async fn write_local_videos(path: String, data: Vec<LocalVideo>) -> Result<(), String> {
-    let content = serde_json::to_string_pretty(&data)
-        .map_err(|e| format!("序列化JSON失败: {}", e))?;
-    std::fs::write(&path, content)
-        .map_err(|e| format!("写入文件失败: {}", e))?;
-    Ok(())
-}
-
-#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn get_file_stats(path: String) -> Result<(u64, String), String> {
     let metadata = std::fs::metadata(&path)
@@ -842,7 +751,6 @@ pub async fn get_file_stats(path: String) -> Result<(u64, String), String> {
 }
 
 /// 使用 ffprobe 获取视频信息
-#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn get_media_info(app_handle: tauri::AppHandle, path: String) -> Result<(String, String, String), String> {
     use tokio::process::Command;
@@ -920,43 +828,6 @@ pub async fn get_media_info(app_handle: tauri::AppHandle, path: String) -> Resul
     Ok((resolution, duration, file_size))
 }
 
-/// 使用 ffmpeg 提取视频第一帧作为封面图
-#[cfg(feature = "desktop")]
-#[tauri::command]
-pub async fn extract_thumbnail(app_handle: tauri::AppHandle, video_path: String) -> Result<String, String> {
-    use tokio::process::Command;
-    use std::path::PathBuf;
-
-    // 获取 ffmpeg 路径
-    let ffmpeg_path = get_sidecar_path(&app_handle, "ffmpeg")?;
-
-    // 生成缩略图路径（与视频同目录，同名但扩展名为 .jpg）
-    let thumbnail_path = PathBuf::from(video_path.clone()).with_extension("jpg");
-
-    // 使用 ffmpeg 提取第一帧
-    let output = Command::new(&ffmpeg_path)
-        .args(&[
-            "-y",                          // 覆盖已存在的文件
-            "-i", &video_path,
-            "-vframes", "1",              // 只提取第一帧
-            "-q:v", "2",                  // 质量设置
-            thumbnail_path.to_string_lossy().as_ref(),
-        ])
-        .output()
-        .await
-        .map_err(|e| format!("执行 ffmpeg 失败: {}", e))?;
-
-    if output.status.success() && thumbnail_path.exists() {
-        Ok(thumbnail_path.to_string_lossy().to_string())
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        tracing::warn!("[THUMBNAIL] 生成封面图失败: {}", stderr);
-        // 删除失败的缩略图文件
-        let _ = std::fs::remove_file(&thumbnail_path);
-        Err(format!("生成封面图失败: {}", stderr))
-    }
-}
-
 /// 格式化文件大小
 fn format_file_size(bytes: u64) -> String {
     if bytes == 0 {
@@ -971,19 +842,16 @@ fn format_file_size(bytes: u64) -> String {
 
 // ==================== 数据库版本地视频管理 ====================
 
-#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn get_local_videos(db: State<'_, Database>) -> Result<Vec<LocalVideo>, String> {
     db.get_all_local_videos().await.map_err(|e| e.to_string())
 }
 
-#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn add_local_video(db: State<'_, Database>, video: LocalVideo) -> Result<(), String> {
     db.add_local_video(&video).await.map_err(|e| e.to_string())
 }
 
-#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn delete_local_video_db(db: State<'_, Database>, id: String) -> Result<(), String> {
     db.delete_local_video(&id).await.map_err(|e| e.to_string())

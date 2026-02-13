@@ -26,7 +26,6 @@ pub use ytdlp::{
     download_video_with_continue,
     cancel_task,
     get_all_tasks,
-    get_task_by_id,
     cleanup_tasks,
 };
 
@@ -88,7 +87,7 @@ pub fn get_sidecar_path(app_handle: &AppHandle, name: &str) -> Result<PathBuf, S
     Ok(PathBuf::from(format!("bin/{}", name)))
 }
 
-/// 获取 sidecar 可能的所有文件名（跨平台）
+/// 获取 sidecar 可能的所有文件名（仅 macOS ARM 和 Windows）
 fn get_sidecar_names(name: &str) -> Vec<String> {
     let base = match name {
         "yt-dlp" => "yt-dlp",
@@ -99,9 +98,7 @@ fn get_sidecar_names(name: &str) -> Vec<String> {
 
     vec![
         format!("{}-aarch64-apple-darwin", base),
-        format!("{}-x86_64-apple-darwin", base),
         format!("{}-x86_64-pc-windows-msvc.exe", base),
-        format!("{}-x86_64-unknown-linux-gnu", base),
         base.to_string(),
     ]
 }
@@ -145,36 +142,16 @@ pub fn get_sidecar_bin_dir(_app_handle: &AppHandle, name: &str) -> Result<PathBu
     Ok(bin_dir)
 }
 
-/// 获取应用数据目录，支持 macOS 和 iOS
+/// 获取应用数据目录（macOS 和 Windows）
 fn get_app_data_dir() -> PathBuf {
-    #[cfg(target_os = "ios")]
-    {
-        // iOS: 使用 Documents 目录（沙盒内）
-        if let Some(documents) = dirs::document_dir() {
-            return documents.join("web-spider");
-        }
-        // 回退到应用可写目录
-        PathBuf::from("./Documents/web-spider")
-    }
-
-    #[cfg(not(target_os = "ios"))]
-    {
-        // macOS/Linux/Windows: 使用标准数据目录
-        if let Some(home_dir) = dirs::home_dir() {
-            // macOS: ~/Library/Application Support/web-spider
-            // Linux: ~/.local/share/web-spider
-            if home_dir.join("Library/Application Support").exists() {
-                return home_dir.join("Library/Application Support/web-spider");
-            }
-            if let Some(data_dir) = dirs::data_dir() {
-                return data_dir.join("web-spider");
-            }
-        }
-        if let Some(data_dir) = dirs::data_dir() {
-            data_dir.join("web-spider")
-        } else {
-            PathBuf::from("./data")
-        }
+    // macOS: ~/Library/Application Support/web-spider
+    // Windows: C:\Users\<user>\AppData\Roaming\web-spider
+    if let Some(data_dir) = dirs::data_dir() {
+        data_dir.join("web-spider")
+    } else if let Some(home_dir) = dirs::home_dir() {
+        home_dir.join(".web-spider")
+    } else {
+        PathBuf::from("./data")
     }
 }
 

@@ -256,8 +256,11 @@ pub async fn download_m3u8(
         };
         if let Some(pid) = old_pid {
             tracing::info!("[DOWNLOAD] 发现旧进程 PID: {}，正在杀死...", pid);
-            #[cfg(target_os = "macos")]
-            {
+            if cfg!(target_os = "windows") {
+                let _ = std::process::Command::new("taskkill")
+                    .args(&["/F", "/PID", &pid.to_string()])
+                    .output();
+            } else {
                 let _ = std::process::Command::new("kill")
                     .arg("-9")
                     .arg(pid.to_string())
