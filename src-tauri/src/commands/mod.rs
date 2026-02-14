@@ -7,7 +7,7 @@ use tauri_plugin_dialog::DialogExt;
 use crate::db::{Database, PaginatedVideos};
 use crate::models::{
     AppConfig, DownloadProgress, LocalVideo, ScrapeResult, VideoItem, VideoStatus, Website,
-    YtdlpConfig, YtdlpResult, YtdlpTask, YtdlpTaskStatus,
+    YtdlpConfig, YtdlpTask, YtdlpTaskStatus,
 };
 use crate::services::get_sidecar_path;
 
@@ -587,18 +587,31 @@ pub async fn delete_ytdlp_task(task_id: String, db: State<'_, Database>) -> Resu
 
 #[tauri::command]
 pub async fn stop_ytdlp_task(task_id: String, db: State<'_, Database>) -> Result<(), String> {
-    // 取消下载进程
-    crate::services::cancel_task(&task_id);
-
-    // 给一点时间让进度保存到数据库
-    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-
-    // 从数据库获取任务（包含当前进度）并更新状态
+    // 从数据库获取当前进度（在杀死进程前获取）
     let task_opt = db.get_ytdlp_task_by_id(&task_id).await
         .map_err(|e| e.to_string())?;
+    
+    let current_progress = task_opt.as_ref().map(|t| t.progress).unwrap_or(0);
+    tracing::info!("[yt-dlp] 准备暂停任务 {}, 当前进度: {}%", task_id, current_progress);
+    
+    // 取消下载进程（这会杀死进程树，包括所有子进程）
+    let killed = crate::services::cancel_task(&task_id);
+    if killed {
+        tracing::info!("[yt-dlp] 已发送终止信号到任务 {}", task_id);
+    } else {
+        tracing::warn!("[yt-dlp] 未找到运行中的进程: {}", task_id);
+    }
 
+    // 等待足够时间让进程及其子进程完全终止
+    // 子进程（如 ffmpeg）可能需要较长时间才能完全停止
+    tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
+
+    // 更新任务状态为暂停（保留进度）
     if let Some(mut task) = task_opt {
+        // 使用杀死进程前保存的进度（current_progress）
+        // 避免后台任务在终止过程中错误更新进度
         task.status = YtdlpTaskStatus::Paused;
+        task.progress = current_progress; // 使用暂停时的实际进度
         task.message = format!("已暂停 (进度: {}%)", task.progress);
         tracing::info!("[yt-dlp] 任务已暂停, id: {}, progress: {}", task_id, task.progress);
         db.save_ytdlp_task(&task).await
@@ -688,6 +701,17 @@ pub async fn start_ytdlp_task(
     ).await;
 
     // 更新最终状态到数据库（更新同一记录，不创建新记录）
+    // 先检查当前数据库状态，避免覆盖用户暂停操作
+    let current_task = db.get_ytdlp_task_by_id(&task_id).await
+        .map_err(|e| e.to_string())?
+        .ok_or("任务不存在")?;
+    
+    // 如果任务已被标记为暂停（用户主动暂停），不要覆盖为失败状态
+    if current_task.status == YtdlpTaskStatus::Paused {
+        tracing::info!("[rust] 任务已被用户暂停，跳过失败状态更新: {}", task_id);
+        return Ok(());
+    }
+    
     let mut completed_task = task.clone();
     completed_task.status = match result {
         Ok(_) => YtdlpTaskStatus::Completed,

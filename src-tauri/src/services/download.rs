@@ -29,20 +29,80 @@ pub enum UrlType {
 static RUNNING_PIDS: std::sync::LazyLock<tokio::sync::Mutex<std::collections::HashMap<String, u32>>> =
     std::sync::LazyLock::new(|| tokio::sync::Mutex::new(std::collections::HashMap::new()));
 
+/// 记录被取消的任务（用于区分用户暂停和真实错误）
+static CANCELLED_TASKS: std::sync::LazyLock<tokio::sync::Mutex<std::collections::HashSet<String>>> =
+    std::sync::LazyLock::new(|| tokio::sync::Mutex::new(std::collections::HashSet::new()));
+
 // ==================== 工具函数模块 ====================
 
-/// 杀死指定 PID 的进程
+/// 杀死指定 PID 的进程及其所有子进程
 fn kill_process(pid: u32) {
+    tracing::info!("[ytdlp-download] 开始终止进程树，主进程 PID: {}", pid);
+    
     if cfg!(target_os = "windows") {
-        let _ = std::process::Command::new("taskkill")
-            .args(["/F", "/PID", &pid.to_string()])
+        // Windows: 使用 /T 参数终止进程及其所有子进程
+        let output = std::process::Command::new("taskkill")
+            .args(["/F", "/T", "/PID", &pid.to_string()])
             .output();
+        
+        match output {
+            Ok(result) => {
+                if result.status.success() {
+                    tracing::info!("[ytdlp-download] 成功终止进程树 PID: {}", pid);
+                } else {
+                    let stderr = String::from_utf8_lossy(&result.stderr);
+                    tracing::warn!("[ytdlp-download] 终止进程失败 PID: {}, 错误: {}", pid, stderr);
+                }
+            }
+            Err(e) => {
+                tracing::error!("[ytdlp-download] 执行 taskkill 失败: {}", e);
+            }
+        }
     } else {
-        let _ = std::process::Command::new("kill")
+        // macOS/Linux: 先杀死所有子进程，再杀死主进程
+        // 步骤1: 使用 pkill -P 终止所有子进程
+        let child_output = std::process::Command::new("pkill")
+            .args(["-9", "-P", &pid.to_string()])
+            .output();
+        
+        match child_output {
+            Ok(result) => {
+                if result.status.success() {
+                    tracing::info!("[ytdlp-download] 已终止所有子进程 of PID: {}", pid);
+                }
+                // pkill 返回 1 表示没有找到子进程，这也是正常的
+            }
+            Err(e) => {
+                tracing::warn!("[ytdlp-download] 终止子进程失败: {}", e);
+            }
+        }
+        
+        // 给子进程一点时间终止
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        
+        // 步骤2: 杀死主进程
+        let main_output = std::process::Command::new("kill")
             .arg("-9")
             .arg(pid.to_string())
             .output();
+        
+        match main_output {
+            Ok(result) => {
+                if result.status.success() {
+                    tracing::info!("[ytdlp-download] 成功终止主进程 PID: {}", pid);
+                } else {
+                    let stderr = String::from_utf8_lossy(&result.stderr);
+                    tracing::warn!("[ytdlp-download] 终止主进程失败 PID: {}, 错误: {}", pid, stderr);
+                }
+            }
+            Err(e) => {
+                tracing::error!("[ytdlp-download] 执行 kill 失败: {}", e);
+            }
+        }
     }
+    
+    // 额外等待时间确保进程完全终止
+    std::thread::sleep(std::time::Duration::from_millis(300));
 }
 
 /// 清理文件名中的非法字符
@@ -367,9 +427,10 @@ async fn check_dependencies(app_handle: &AppHandle) -> Result<PathBuf, String> {
 async fn kill_old_process(task_id: &str) {
     let mut pids = RUNNING_PIDS.lock().await;
     if let Some(old_pid) = pids.remove(task_id) {
-        tracing::info!("[ytdlp-download] 发现旧进程 PID: {}，正在杀死...", old_pid);
+        tracing::info!("[ytdlp-download] 发现旧进程 PID: {}，正在终止进程树...", old_pid);
         kill_process(old_pid);
-        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+        // 等待足够时间让进程及其子进程完全终止
+        tokio::time::sleep(tokio::time::Duration::from_millis(1500)).await;
     }
 }
 
@@ -379,10 +440,12 @@ async fn execute_ytdlp_download(
     url: &str,
     args: Vec<String>,
     task_id: &str,
+    title: &str,
     mut progress_callback: impl FnMut(YtdlpTask) + Send,
 ) -> Result<YtdlpResult, String> {
     // 记录 PID
     let task_id_clone = task_id.to_string();
+    let title_clone = title.to_string();
 
     let mut child = Command::new(ytdlp_path)
         .args(&args)
@@ -424,7 +487,7 @@ async fn execute_ytdlp_download(
                             progress_callback(YtdlpTask {
                                 id: task_id.to_string(),
                                 url: url.to_string(),
-                                title: String::new(),
+                                title: title_clone.clone(),
                                 progress: progress.clamp(0, 99),
                                 speed: speed.clone(),
                                 file_path: None,
@@ -472,6 +535,19 @@ async fn execute_ytdlp_download(
 
     if !status.success() {
         let exit_code = status.code().unwrap_or(-1);
+        
+        // 检查是否是用户主动取消（被标记为取消的任务，退出码通常是 -9 或被信号终止）
+        let was_cancelled = {
+            let cancelled = CANCELLED_TASKS.lock().await;
+            cancelled.contains(&task_id_clone)
+        };
+        
+        if was_cancelled {
+            // 用户主动取消，不输出错误日志
+            tracing::info!("[ytdlp-download] 进程被用户终止，退出码: {}", exit_code);
+            return Err(format!("进程被用户终止"));
+        }
+        
         let err_msg = if error_msg.is_empty() {
             format!("yt-dlp 进程退出，退出码: {} (可能是因为临时文件不存在或损坏，请重试从头下载)", exit_code)
         } else {
@@ -685,7 +761,7 @@ pub async fn download_video(
 
     // 13. 执行下载
     let ytdlp_path = get_sidecar_path(app_handle, "yt-dlp")?;
-    let mut result = execute_ytdlp_download(&ytdlp_path, &decoded_url, args, task_id, |task| {
+    let result = execute_ytdlp_download(&ytdlp_path, &decoded_url, args, task_id, title, |task| {
         progress_callback(task);
     }).await;
 
@@ -742,6 +818,19 @@ pub async fn download_video(
             Ok(ytdlp_result)
         }
         Err(e) => {
+            // 检查是否是用户主动暂停（被取消）
+            let was_cancelled = {
+                let mut cancelled = CANCELLED_TASKS.lock().await;
+                cancelled.remove(task_id)
+            };
+
+            if was_cancelled {
+                tracing::info!("[ytdlp-download] 任务被用户暂停: {}", task_id);
+                // 不发送失败状态，让调用方(stop_ytdlp_task)处理暂停状态
+                // 避免进度被重置为0
+                return Err(e);
+            }
+
             tracing::error!("[ytdlp-download] 下载失败: {}", e);
 
             // 发送失败状态
@@ -768,6 +857,12 @@ pub async fn download_video(
 /// 取消下载任务
 pub fn cancel_task(task_id: &str) -> bool {
     let result = futures::executor::block_on(async {
+        // 标记任务为被取消（用户主动暂停）
+        {
+            let mut cancelled = CANCELLED_TASKS.lock().await;
+            cancelled.insert(task_id.to_string());
+        }
+        
         let mut pids = RUNNING_PIDS.lock().await;
         if let Some(pid) = pids.remove(task_id) {
             tracing::info!("[ytdlp-download] 杀死进程: {} (PID: {})", task_id, pid);
