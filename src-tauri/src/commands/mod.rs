@@ -7,7 +7,7 @@ use tauri_plugin_dialog::DialogExt;
 use crate::db::{Database, PaginatedVideos};
 use crate::models::{
     AppConfig, DownloadProgress, LocalVideo, ScrapeResult, VideoItem, VideoStatus, Website,
-    YtdlpConfig, YtdlpTask, YtdlpTaskStatus,
+    YtdlpConfig, YtdlpResult, YtdlpTask, YtdlpTaskStatus,
 };
 use crate::services::get_sidecar_path;
 
@@ -436,9 +436,26 @@ pub async fn batch_download(
     let results = batch_download_concurrent(&app_handle, videos_to_download, 3, progress_tx).await;
 
     for (id, result) in results.iter() {
-        if result.is_ok() {
+        if let Ok(ytdlp_result) = result {
             if let Err(e) = db.update_video_status(id, VideoStatus::Downloaded, Some(Utc::now())).await {
                 tracing::error!("[DOWNLOAD] 更新下载状态失败: {} - {}", id, e);
+            }
+
+            // 添加到本地视频管理
+            let local_video = LocalVideo {
+                id: uuid::Uuid::new_v4().to_string(),
+                name: ytdlp_result.title.clone(),
+                file_path: ytdlp_result.file_path.clone(),
+                file_size: format_file_size(ytdlp_result.file_size),
+                duration: String::new(),
+                resolution: String::new(),
+                added_at: chrono::Utc::now(),
+            };
+
+            if let Err(e) = db.add_local_video(&local_video).await {
+                tracing::warn!("[DOWNLOAD] 添加到本地视频失败: {}", e);
+            } else {
+                tracing::info!("[DOWNLOAD] 已添加到本地视频管理: {}", ytdlp_result.title);
             }
         } else {
             if let Err(e) = db.update_video_status(id, VideoStatus::Scraped, None).await {
@@ -630,8 +647,7 @@ pub async fn start_ytdlp_task(
     // 保留之前保存的进度，从该进度继续下载
     update_task.progress = saved_progress;
 
-    db.save_ytdlp_task(&update_task).await
-        .map_err(|e| e.to_string())?;
+    db.save_ytdlp_task(&update_task).await.map_err(|e| e.to_string())?;
 
     // 启动下载
     let (progress_tx, _) = broadcast::channel::<YtdlpTask>(100);
@@ -658,8 +674,8 @@ pub async fn start_ytdlp_task(
         }
     });
 
-    // 执行下载（支持断点续传）
-    let result = crate::services::download_video_with_continue(
+    // 执行下载（使用新的统一下载入口）
+    let result = crate::services::download_video(
         &app_handle,
         &task.url,
         &output_path,

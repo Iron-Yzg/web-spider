@@ -68,64 +68,43 @@ pub fn check_ffmpeg(app_handle: &AppHandle) -> bool {
 /// 解析 yt-dlp 进度输出
 /// 标准格式: [download:50.0%][1.5 MB/s][ETA 00:30]
 /// 或: [download:100.0%][3.50MiB/s][NA]
-fn parse_ytdlp_progress(line: &str) -> (u8, String, String) {
+fn parse_ytdlp_progress(output: &str) -> (u8, String, String) {
+    let mut progress = 0u8;
+    let mut speed = String::new();
+    let mut eta = String::new();
+
+    // 跳过空行和非下载行
+    if output.trim().is_empty() || !output.contains("[download") {
+        return (progress, speed, eta);
+    }
     // 查找进度部分开始位置
-    if let Some(start) = line.find("[download:") {
-        let progress_part = &line[start..];
-
-        // 提取进度百分比 - 从 : 后面开始，到 % 之前
-        let progress = if let Some(percent_start) = progress_part.find(':') {
-            if let Some(percent_end) = progress_part.find('%') {
-                // +1 跳过 ':'，减去 1 跳过 '%'
-                let pct_str = &progress_part[percent_start + 1..percent_end];
-                // 清理可能的空格并解析
-                let cleaned = pct_str.trim();
-                match cleaned.parse::<f64>() {
-                    Ok(p) => p.clamp(0.0, 100.0) as u8,
-                    Err(_) => 0,
+    if let Some(caps) = regex::Regex::new(r#"\[download:\s*([\d.]+)\s*%\]\[([^\]]*)\]\[([^\]]*)\]"#)
+        .unwrap()
+        .captures(output)
+    {
+        if let Some(p) = caps.get(1) {
+            let percent_str = p.as_str();
+            // 只解析有效的数字百分比
+            if let Ok(pct) = percent_str.parse::<f64>() {
+                if pct >= 0.0 && pct <= 100.0 {
+                    progress = pct as u8;
                 }
-            } else {
-                0
             }
-        } else {
-            0
-        };
-
-        // 提取速度 - 在第一个 "][" 和第二个 "][" 之间
-        let speed = if let Some(first_bracket) = progress_part.find("][") {
-            let after_first = &progress_part[first_bracket + 2..];
-            if let Some(second_bracket) = after_first.find("][") {
-                let speed_str = &after_first[..second_bracket];
-                if speed_str.is_empty() || speed_str == "NA" {
-                    String::from("0 MB/s")
-                } else {
-                    speed_str.to_string()
-                }
-            } else {
-                String::from("0 MB/s")
+        }
+        if let Some(s) = caps.get(2) {
+            let speed_str = s.as_str().trim();
+            // 跳过 "Unknown" 或空字符串
+            if !speed_str.is_empty() && speed_str != "Unknown" {
+                speed = speed_str.to_string();
             }
-        } else {
-            String::from("0 MB/s")
-        };
-
-        // 提取 ETA - 在 "][ETA " 和最后一个 "]" 之间
-        let eta = if let Some(eta_start) = progress_part.rfind("][ETA ") {
-            let eta_content = &progress_part[eta_start + 6..];
-            // 找到最后一个 `]` 的位置
-            if let Some(eta_end) = eta_content.rfind(']') {
-                let eta_str = &eta_content[..eta_end];
-                if eta_str.is_empty() || eta_str == "NA" {
-                    String::from("--:--")
-                } else {
-                    format!("ETA {}", eta_str)
-                }
-            } else {
-                String::from("--:--")
+        }
+        if let Some(e) = caps.get(3) {
+            let eta_str = e.as_str().trim();
+            if !eta_str.is_empty() && eta_str != "Unknown" {
+                eta = eta_str.to_string();
             }
-        } else {
-            String::from("--:--")
-        };
-
+        }
+        tracing::debug!("[yt-dlp] 模板解析: progress={}%, speed={}, eta={}", progress, speed, eta);
         return (progress, speed, eta);
     }
 
@@ -226,6 +205,22 @@ pub async fn download_m3u8(
         "-o".to_string(),
         format!("{}/{}.%(ext)s", output_path, safe_filename),
     ];
+
+    // 在 build_args 中添加
+    args.push("--cookies-from-browser".to_string());
+    args.push("chrome".to_string()); // 或者 "safari", "edge", "firefox"
+    args.push("--impersonate".to_string());
+    args.push("chrome".to_string()); // 模拟 Chrome 的 TLS 指纹
+
+    // // 添加常见请求头，模拟浏览器访问
+    // args.push("--add-header".to_string());
+    // args.push("User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36".to_string());
+    // args.push("--add-header".to_string());
+    // args.push("Accept: */*".to_string());
+    // args.push("--add-header".to_string());
+    // args.push("Accept-Language: zh-CN,zh;q=0.9,en;q=0.8".to_string());
+    // args.push("--add-header".to_string());
+    // args.push("Referer: https://www.google.com/".to_string());
 
     // 如果是 m3u8 URL
     if decoded_url.contains(".m3u8") {

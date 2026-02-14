@@ -7,6 +7,7 @@ use tauri_plugin_shell::ShellExt;
 mod scraper;
 mod downloader;
 mod ytdlp;
+mod ytdlp_download;
 
 // 重新导出 scraper 模块的内容
 pub use scraper::{
@@ -16,14 +17,19 @@ pub use scraper::{
     get_available_scrapers,
 };
 
-pub use downloader::{
-    check_ffmpeg,
-    batch_download_concurrent,
-};
+// pub use downloader::{
+//     check_ffmpeg,
+//     batch_download_concurrent,
+// };
 
-pub use ytdlp::{
+// ytdlp 模块已废弃，使用 ytdlp_download
+
+// 重新导出 ytdlp_download 模块的内容（统一下载入口）
+pub use ytdlp_download::{
+    batch_download_concurrent,
+    download_video,
+    check_ffmpeg,
     get_video_info,
-    download_video_with_continue,
     cancel_task,
     get_all_tasks,
     cleanup_tasks,
