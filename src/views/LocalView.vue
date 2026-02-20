@@ -9,7 +9,6 @@ const videos = ref<LocalVideo[]>([])
 const searchQuery = ref('')
 const filteredVideos = ref<LocalVideo[]>([])
 const isLoading = ref(false)
-const videoRefs = ref<Record<string, HTMLVideoElement>>({})
 const selectDialog = ref<{ visible: boolean, message: string, onConfirm: (() => void) | null }>({
   visible: false,
   message: '',
@@ -51,6 +50,44 @@ function filterVideos() {
   }
 }
 
+// 带超时的 promise 包装
+function withTimeout<T>(promise: Promise<T>, ms: number, errorMsg: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => 
+      setTimeout(() => reject(new Error(errorMsg)), ms)
+    )
+  ])
+}
+
+// 限制并发的异步处理器
+async function processWithConcurrency<T, R>(
+  items: T[],
+  processor: (item: T) => Promise<R>,
+  concurrency: number
+): Promise<(R | null)[]> {
+  const results: (R | null)[] = new Array(items.length).fill(null)
+  
+  async function processBatch(startIdx: number) {
+    const batch = items.slice(startIdx, startIdx + concurrency)
+    const batchPromises = batch.map((item, idx) => 
+      processor(item).then(result => {
+        results[startIdx + idx] = result
+      }).catch(e => {
+        console.error(`处理第 ${startIdx + idx} 项失败:`, e)
+        results[startIdx + idx] = null
+      })
+    )
+    await Promise.all(batchPromises)
+  }
+  
+  for (let i = 0; i < items.length; i += concurrency) {
+    await processBatch(i)
+  }
+  
+  return results
+}
+
 // 选择文件夹并添加视频
 async function selectVideos() {
   try {
@@ -60,12 +97,30 @@ async function selectVideos() {
     if (!result || result.length === 0) return
 
     isLoading.value = true
+    console.log(`[LocalView] 开始处理 ${result.length} 个视频文件`)
 
-    for (const filePath of result) {
-      const info = await getVideoInfo(filePath)
+    // 使用限制并发(3个)的并行处理，避免同时扫描多个大文件导致卡死
+    const infos = await processWithConcurrency(
+      result,
+      async (filePath) => {
+        // 每个文件处理添加 10 秒超时
+        return withTimeout(
+          getVideoInfo(filePath),
+          10000,
+          '获取视频信息超时'
+        ).catch(e => {
+          console.warn(`[LocalView] 获取视频信息失败或超时: ${filePath}`, e)
+          return null
+        })
+      },
+      3 // 最多同时处理 3 个文件
+    )
+
+    // 保存到数据库
+    for (const info of infos) {
       if (info) {
         // 检查是否已存在
-        const exists = videos.value.some(v => v.file_path === filePath)
+        const exists = videos.value.some(v => v.file_path === info.file_path)
         if (!exists) {
           // 添加到数据库
           await addLocalVideo(info)
@@ -75,6 +130,7 @@ async function selectVideos() {
     }
 
     filterVideos()
+    console.log(`[LocalView] 成功添加视频，当前共 ${videos.value.length} 个`)
   } catch (e) {
     console.error('选择视频失败:', e)
   } finally {
@@ -130,19 +186,10 @@ function formatFileSize(bytes: number): string {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
 }
 
-// 视频加载完成后跳转到 0.1 秒显示第一帧
-function handleVideoLoaded(videoId: string) {
-  const video = videoRefs.value[videoId]
-  if (video) {
-    video.currentTime = 0.1  // 跳转到 0.1 秒（避免黑屏）
-    video.pause()
-  }
-}
-
 // 播放视频
 function playVideo(video: LocalVideo) {
-  // 使用 convertFileSrc 转换本地路径为 asset URL
-  playerSrc.value = convertFileSrc(video.file_path)
+  // 传递原始文件路径，由 VideoPlayer 内部处理路径转换
+  playerSrc.value = video.file_path
   playerTitle.value = video.name
   playerPlaylist.value = filteredVideos.value
   currentVideoIndex.value = filteredVideos.value.findIndex(v => v.id === video.id)
@@ -153,8 +200,8 @@ function playVideo(video: LocalVideo) {
 function handlePlayNext(nextIndex: number) {
   if (nextIndex >= 0 && nextIndex < playerPlaylist.value.length) {
     const nextVideo = playerPlaylist.value[nextIndex]
-    // 使用 convertFileSrc 转换本地路径为 asset URL
-    playerSrc.value = convertFileSrc(nextVideo.file_path)
+    // 传递原始文件路径，由 VideoPlayer 内部处理路径转换
+    playerSrc.value = nextVideo.file_path
     playerTitle.value = nextVideo.name
     currentVideoIndex.value = nextIndex
   }
@@ -190,7 +237,8 @@ async function handleDeleteCurrent() {
       ? playerPlaylist.value.length - 1
       : currentVideoIndex.value
     const nextVideo = playerPlaylist.value[nextIndex]
-    playerSrc.value = convertFileSrc(nextVideo.file_path)
+    // 传递原始文件路径，由 VideoPlayer 内部处理路径转换
+    playerSrc.value = nextVideo.file_path
     playerTitle.value = nextVideo.name
     currentVideoIndex.value = nextIndex
   } else {
@@ -292,15 +340,11 @@ onMounted(async () => {
         <div class="table-body">
           <div v-for="video in filteredVideos" :key="video.id" class="table-row">
             <div class="col-thumbnail">
-              <video
-                :ref="el => videoRefs[video.id] = el as HTMLVideoElement"
-                :src="convertFileSrc(video.file_path)"
-                class="cover-video"
-                muted
-                preload="auto"
-                @loadeddata="handleVideoLoaded(video.id)"
-                @click="playVideo(video)"
-              ></video>
+              <div class="video-thumbnail" @click="playVideo(video)">
+                <svg class="play-icon" viewBox="0 0 24 24" fill="currentColor">
+                  <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                </svg>
+              </div>
             </div>
             <div class="col-name">
               <span class="video-name" :title="video.name">{{ video.name }}</span>
@@ -520,17 +564,27 @@ onMounted(async () => {
   background: #f5f5f5;
 }
 
-.cover-video {
+.video-thumbnail {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
   border-radius: 4px;
   cursor: pointer;
-  background: #000;
+  transition: all 0.2s;
 }
 
-.cover-video:hover {
+.video-thumbnail:hover {
   opacity: 0.9;
+  background: linear-gradient(135deg, #16213e 0%, #1a1a2e 100%);
+}
+
+.video-thumbnail .play-icon {
+  width: 20px;
+  height: 20px;
+  color: rgba(255, 255, 255, 0.8);
 }
 
 .col-name {

@@ -222,10 +222,8 @@ function handleVideoLoaded(videoId: string) {
 // 打开播放器播放本地视频
 async function openPlayer(task: YtdlpTask) {
   if (task.file_path) {
-    // 使用 convertFileSrc 转换本地路径为 asset URL
-    const assetUrl = convertFileSrc(task.file_path)
-
-    playerSrc.value = assetUrl
+    // 传递原始文件路径，由 VideoPlayer 内部处理路径转换
+    playerSrc.value = task.file_path
     playerTitle.value = task.title || '本地视频'
     playerFilePath.value = task.file_path
     playerPlaylist.value = filteredTasks.value.filter(t => t.file_path)
@@ -239,7 +237,8 @@ function handlePlayNext(nextIndex: number) {
   if (nextIndex >= 0 && nextIndex < playerPlaylist.value.length) {
     const nextTask = playerPlaylist.value[nextIndex]
     if (nextTask.file_path) {
-      playerSrc.value = convertFileSrc(nextTask.file_path)
+      // 传递原始文件路径，由 VideoPlayer 内部处理路径转换
+      playerSrc.value = nextTask.file_path
       playerTitle.value = nextTask.title || '本地视频'
       playerFilePath.value = nextTask.file_path
       currentVideoIndex.value = nextIndex
@@ -264,7 +263,8 @@ async function handleDeleteCurrent() {
         : currentVideoIndex.value
       const nextTask = playerPlaylist.value[nextIndex]
       if (nextTask.file_path) {
-        playerSrc.value = convertFileSrc(nextTask.file_path)
+        // 传递原始文件路径，由 VideoPlayer 内部处理路径转换
+        playerSrc.value = nextTask.file_path
         playerTitle.value = nextTask.title || '本地视频'
         playerFilePath.value = nextTask.file_path
         currentVideoIndex.value = nextIndex

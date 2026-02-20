@@ -6,6 +6,9 @@ use tauri_plugin_shell::ShellExt;
 // 子模块
 mod scraper;
 mod download;
+mod transcode;
+mod remux;
+mod hls_server;
 
 // 重新导出 scraper 模块的内容
 pub use scraper::{
@@ -25,6 +28,22 @@ pub use download::{
     get_all_tasks,
     cleanup_tasks,
 };
+
+// 重新导出转码模块
+pub use transcode::{
+    start_video_transcode_cmd,
+    stop_video_transcode_cmd,
+    cleanup_all_transcodes,
+};
+
+// 重新导出解复用模块
+pub use remux::{
+    start_video_playback,
+    stop_remux,
+};
+
+// 重新导出 HLS 服务器模块（仅在内部使用）
+pub use hls_server::cleanup_all_hls_servers;
 
 /// 使用 Tauri 2.x Sidecar API 获取 sidecar 的实际路径
 /// Tauri 会自动处理平台后缀，只需要提供基础名称

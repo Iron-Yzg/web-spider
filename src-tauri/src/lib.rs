@@ -171,9 +171,26 @@ pub fn run() {
             commands::get_local_videos,
             commands::add_local_video,
             commands::delete_local_video_db,
+            // 视频转码命令
+            commands::start_video_transcode,
+            commands::stop_video_transcode,
+            // 视频解复用/播放命令
+            commands::start_video_playback_cmd,
+            commands::stop_video_remux,
+            commands::open_with_system_player,
         ]);
 
     builder
+        .on_window_event(|_window, event| {
+            if let tauri::WindowEvent::Destroyed = event {
+                // 应用退出时清理所有转码会话和 HLS 服务器
+                let runtime = tokio::runtime::Runtime::new().expect("Failed to create runtime");
+                runtime.block_on(async {
+                    services::cleanup_all_transcodes().await;
+                    services::cleanup_all_hls_servers().await;
+                });
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
