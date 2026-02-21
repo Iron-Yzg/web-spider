@@ -20,6 +20,8 @@ pub struct VideoItem {
     pub favorite_count: Option<i64>,
     /// 播放数
     pub view_count: Option<i64>,
+    /// 下载后的本地路径
+    pub file_path: Option<String>,
 }
 
 impl Default for VideoItem {
@@ -36,17 +38,18 @@ impl Default for VideoItem {
             cover_url: None,
             favorite_count: None,
             view_count: None,
+            file_path: None,
         }
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum VideoStatus {
-    Pending,      // 待爬取
-    Scraped,      // 已爬取待下载
-    Downloading,  // 下载中
-    Downloaded,   // 已下载
-    Failed,       // 失败
+    Pending,     // 待爬取
+    Scraped,     // 已爬取待下载
+    Downloading, // 下载中
+    Downloaded,  // 已下载
+    Failed,      // 失败
 }
 
 /// 应用配置
@@ -156,7 +159,7 @@ pub struct YtdlpConfig {
 impl Default for YtdlpConfig {
     fn default() -> Self {
         Self {
-            quality: 720,  // 0=最佳
+            quality: 720, // 0=最佳
             format: "mp4".to_string(),
             subtitles: false,
             subtitle_langs: "zh-CN,zh-Hans,zh-Hant,en".to_string(),
@@ -173,13 +176,13 @@ impl Default for YtdlpConfig {
 /// yt-dlp 任务状态
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum YtdlpTaskStatus {
-    Pending,      // 等待中
-    Queued,       // 已加入队列
-    Downloading,   // 下载中
-    Paused,       // 已暂停
-    Completed,    // 已完成
-    Failed,       // 失败
-    Cancelled,    // 已取消
+    Pending,     // 等待中
+    Queued,      // 已加入队列
+    Downloading, // 下载中
+    Paused,      // 已暂停
+    Completed,   // 已完成
+    Failed,      // 失败
+    Cancelled,   // 已取消
 }
 
 /// yt-dlp 下载任务（简化版）

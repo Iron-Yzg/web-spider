@@ -262,6 +262,7 @@ pub async fn scrape_video(
                 cover_url: result.cover_url.clone(),
                 favorite_count: result.favorite_count,
                 view_count: result.view_count,
+                file_path: None,
             };
             match db.add_video(&video).await {
                 Ok(_) => {

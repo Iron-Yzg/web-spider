@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import type { LocalVideo } from '../types'
 import type { DlnaDevice } from '../services/api'
 import { 
@@ -60,10 +60,23 @@ async function handleDiscover() {
   }
 }
 
+const isLocalVideo = computed(() => {
+  return props.video.file_path && props.video.file_path.length > 0
+})
+
 async function handleStartServer() {
   if (!props.video) return
   
   isStartingServer.value = true
+  
+  // 网络视频不需要启动本地服务器
+  if (!isLocalVideo.value && props.video.m3u8_url) {
+    serverUrl.value = props.video.m3u8_url
+    statusMessage.value = '使用网络视频地址'
+    isStartingServer.value = false
+    return
+  }
+  
   statusMessage.value = '正在启动媒体服务器...'
   
   try {
@@ -102,12 +115,13 @@ async function handleCast() {
 }
 
 async function handleClose() {
-  // 异步停止电视播放和服务器，不等待完成
+  // 异步停止电视播放
   if (castDeviceName.value) {
     stopDlnaPlayback(castDeviceName.value).catch(e => console.error('停止播放失败:', e))
   }
   
-  if (serverUrl.value) {
+  // 仅对本地视频停止服务器
+  if (isLocalVideo.value && serverUrl.value) {
     stopDlnaMediaServer().catch(e => console.error('停止服务器失败:', e))
   }
   
@@ -150,7 +164,7 @@ async function handleClose() {
         </div>
         
         <div v-if="serverUrl" class="server-info">
-          <span class="label">服务器地址:</span>
+          <span class="label">{{ isLocalVideo ? '服务器地址:' : '视频地址:' }}</span>
           <code>{{ serverUrl }}</code>
         </div>
         

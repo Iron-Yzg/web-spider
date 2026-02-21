@@ -475,7 +475,7 @@ watch([searchQuery, statusFilter, () => tasks.value], () => {
                 class="action-btn stop"
                 title="停止"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none">
                   <rect x="6" y="4" width="4" height="16"></rect>
                   <rect x="14" y="4" width="4" height="16"></rect>
                 </svg>
@@ -488,7 +488,7 @@ watch([searchQuery, statusFilter, () => tasks.value], () => {
                 class="action-btn start"
                 title="开始"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none">
                   <polygon points="5 3 19 12 5 21 5 3"></polygon>
                 </svg>
               </button>
@@ -496,7 +496,7 @@ watch([searchQuery, statusFilter, () => tasks.value], () => {
               <!-- 已完成（未运行）显示播放和文件夹 -->
               <template v-else-if="task.status === 'Completed' && task.file_path">
                 <button @click="openPlayer(task)" class="action-btn play" title="播放">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none">
                     <polygon points="5 3 19 12 5 21 5 3"></polygon>
                   </svg>
                 </button>
@@ -980,8 +980,8 @@ watch([searchQuery, statusFilter, () => tasks.value], () => {
 }
 
 .action-btn.play {
-  background: #e0e7ff;
-  color: #4f46e5;
+  background: #fef3c7;
+  color: #d97706;
 }
 
 .action-btn.play:hover {

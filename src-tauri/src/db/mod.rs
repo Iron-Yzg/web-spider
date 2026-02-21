@@ -42,7 +42,15 @@ fn row_to_video_item(row: &SqliteRow) -> Result<VideoItem, sqlx::Error> {
         cover_url,
         favorite_count: Some(favorite_count),
         view_count: Some(view_count),
+        file_path: None,
     })
+}
+
+/// 从数据库行解析 VideoItem（带 file_path）
+fn row_to_video_item_with_path(row: &SqliteRow) -> Result<VideoItem, sqlx::Error> {
+    let mut item = row_to_video_item(row)?;
+    item.file_path = row.try_get("file_path").ok().filter(|s: &String| !s.is_empty());
+    Ok(item)
 }
 
 /// 从数据库行解析 YtdlpTask（简化版）
@@ -225,13 +233,13 @@ impl Database {
 
     /// 获取所有视频（按创建时间倒序）
     pub async fn get_all_videos(&self) -> Result<Vec<VideoItem>, sqlx::Error> {
-        let rows = sqlx::query("SELECT id, name, m3u8_url, status, created_at, downloaded_at, scrape_id, website_name, cover_url, favorite_count, view_count FROM videos ORDER BY created_at DESC")
+        let rows = sqlx::query("SELECT v.id, v.name, v.m3u8_url, v.status, v.created_at, v.downloaded_at, v.scrape_id, v.website_name, v.cover_url, v.favorite_count, v.view_count, l.file_path FROM videos v LEFT JOIN local_videos l ON v.name = l.name OR v.id = l.id ORDER BY v.created_at DESC")
             .fetch_all(&self.pool)
             .await?;
 
         let mut videos = Vec::new();
         for row in rows {
-            videos.push(row_to_video_item(&row)?);
+            videos.push(row_to_video_item_with_path(&row)?);
         }
         Ok(videos)
     }
@@ -245,7 +253,7 @@ impl Database {
         // 构建占位符: ?,?,?
         let placeholders: Vec<String> = ids.iter().map(|_| "?".to_string()).collect();
         let sql = format!(
-            "SELECT id, name, m3u8_url, status, created_at, downloaded_at, scrape_id, website_name, cover_url, favorite_count, view_count FROM videos WHERE id IN ({}) ORDER BY created_at DESC",
+            "SELECT v.id, v.name, v.m3u8_url, v.status, v.created_at, v.downloaded_at, v.scrape_id, v.website_name, v.cover_url, v.favorite_count, v.view_count, l.file_path FROM videos v LEFT JOIN local_videos l ON v.name = l.name OR v.id = l.id WHERE v.id IN ({}) ORDER BY v.created_at DESC",
             placeholders.join(",")
         );
 
@@ -258,7 +266,7 @@ impl Database {
 
         let mut videos = Vec::new();
         for row in rows {
-            videos.push(row_to_video_item(&row)?);
+            videos.push(row_to_video_item_with_path(&row)?);
         }
         Ok(videos)
     }
@@ -277,7 +285,7 @@ impl Database {
             .await?;
 
         // 获取分页数据
-        let rows = sqlx::query("SELECT id, name, m3u8_url, status, created_at, downloaded_at, scrape_id, website_name, cover_url, favorite_count, view_count FROM videos ORDER BY created_at DESC LIMIT ? OFFSET ?")
+        let rows = sqlx::query("SELECT v.id, v.name, v.m3u8_url, v.status, v.created_at, v.downloaded_at, v.scrape_id, v.website_name, v.cover_url, v.favorite_count, v.view_count, l.file_path FROM videos v LEFT JOIN local_videos l ON v.name = l.name OR v.id = l.id ORDER BY v.created_at DESC LIMIT ? OFFSET ?")
             .bind(page_size)
             .bind(offset)
             .fetch_all(&self.pool)
@@ -285,7 +293,7 @@ impl Database {
 
         let mut videos = Vec::new();
         for row in rows {
-            videos.push(row_to_video_item(&row)?);
+            videos.push(row_to_video_item_with_path(&row)?);
         }
 
         let videos_len = videos.len();
@@ -318,7 +326,7 @@ impl Database {
             .await?;
 
         // 获取分页数据
-        let rows = sqlx::query("SELECT id, name, m3u8_url, status, created_at, downloaded_at, scrape_id, website_name, cover_url, favorite_count, view_count FROM videos WHERE UPPER(name) LIKE ? OR UPPER(id) LIKE ? ORDER BY created_at DESC LIMIT ? OFFSET ?")
+        let rows = sqlx::query("SELECT v.id, v.name, v.m3u8_url, v.status, v.created_at, v.downloaded_at, v.scrape_id, v.website_name, v.cover_url, v.favorite_count, v.view_count, l.file_path FROM videos v LEFT JOIN local_videos l ON v.name = l.name OR v.id = l.id WHERE UPPER(v.name) LIKE ? OR UPPER(v.id) LIKE ? ORDER BY v.created_at DESC LIMIT ? OFFSET ?")
             .bind(&search_pattern)
             .bind(&search_pattern)
             .bind(page_size)

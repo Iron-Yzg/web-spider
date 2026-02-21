@@ -20,6 +20,7 @@ export interface VideoItem {
   cover_url?: string
   view_count?: number
   favorite_count?: number
+  file_path?: string  // 下载后的本地路径
 }
 
 // 应用配置
@@ -136,6 +137,7 @@ export interface LocalVideo {
   id: string
   name: string
   file_path: string
+  m3u8_url?: string  // 网络视频地址
   file_size: string
   duration: string
   resolution: string

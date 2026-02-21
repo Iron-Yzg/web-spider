@@ -146,16 +146,32 @@ impl DlnaService {
         let service = &render.service;
         let device_url = render.device.url();
 
+        // 根据 URL 判断视频类型
+        let is_m3u8 = stream_url.to_lowercase().contains(".m3u8");
+        
         // 使用完整的 protocolInfo（索尼电视需要）
+        // 根据视频类型使用不同的 content-type
+        let (content_type, protocol_info) = if is_m3u8 {
+            (
+                "application/vnd.apple.mpegurl".to_string(),
+                "http-get:*:application/vnd.apple.mpegurl:DLNA.ORG_OP=01;DLNA.ORG_CI=0".to_string()
+            )
+        } else {
+            (
+                "video/mp4".to_string(),
+                "http-get:*:video/mp4:DLNA.ORG_PN=AVC_MP4_HP_HD_24p;DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000".to_string()
+            )
+        };
+        
         let metadata = format!(
             r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
   <item id="0" parentID="-1" restricted="1">
     <dc:title>Video</dc:title>
-    <res protocolInfo="http-get:*:video/mp4:DLNA.ORG_PN=AVC_MP4_HP_HD_24p;DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000">{}</res>
+    <res protocolInfo="{}">{}</res>
     <upnp:class>object.item.videoItem.movie</upnp:class>
   </item>
 </DIDL-Lite>"#,
-            stream_url
+            protocol_info, stream_url
         );
         
         let set_args = format!(

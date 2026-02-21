@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { listen } from '@tauri-apps/api/event'
-import type { VideoItem, ScrapeResult, DownloadProgress, PaginatedVideos, Website } from '../types'
+import type { VideoItem, ScrapeResult, DownloadProgress, PaginatedVideos, Website, LocalVideo } from '../types'
 import { VideoStatus } from '../types'
+import VideoPlayer from '../components/VideoPlayer.vue'
+import DlnaCastDialog from '../components/DlnaCastDialog.vue'
 import {
   getVideos as fetchVideos,
   searchVideos as searchVideosApi,
@@ -16,7 +18,6 @@ import {
   downloadVideo as downloadVideoApi,
 } from '../services/api'
 import LogPopup from '../components/LogPopup.vue'
-import VideoPlayer from '../components/VideoPlayer.vue'
 
 const videoId = ref('')
 const isScraping = ref(false)
@@ -87,6 +88,33 @@ const playerTitle = ref('')
 const playerVideoId = ref('')
 const playerPlaylist = ref<VideoItem[]>([])
 const currentVideoIndex = ref(0)
+
+// DLNA 投屏状态
+const showDlnaDialog = ref(false)
+const dlnaVideo = ref<LocalVideo | null>(null)
+
+function openDlnaDialog(video: VideoItem) {
+  // 优先使用本地文件，其次使用网络地址
+  if (!video.file_path && !video.m3u8_url) {
+    return // 没有视频地址，无法投屏
+  }
+  dlnaVideo.value = {
+    id: video.id,
+    name: video.name,
+    file_path: video.file_path || '',  // 本地文件优先
+    m3u8_url: video.m3u8_url || '',   // 网络地址作为备选
+    file_size: '',
+    duration: '',
+    resolution: '',
+    added_at: '',
+  }
+  showDlnaDialog.value = true
+}
+
+function closeDlnaDialog() {
+  showDlnaDialog.value = false
+  dlnaVideo.value = null
+}
 
 let unlistenVideos: (() => void) | null = null
 let unlistenProgress: (() => void) | null = null
@@ -874,15 +902,15 @@ function handleImageError(event: Event) {
                   <polygon points="5 3 19 12 5 21 5 3"></polygon>
                 </svg>
               </button>
-              <!-- 复制按钮 -->
+              <!-- DLNA 投屏按钮（仅已下载的视频可投屏） -->
               <button
-                @click="copyUrl(video.m3u8_url)"
-                class="action-btn copy"
-                title="复制链接"
+                @click="openDlnaDialog(video)"
+                class="action-btn cast"
+                title="DLNA 投屏"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="2" y="7" width="20" height="15" rx="2" ry="2"></rect>
+                  <polyline points="17 2 12 7 7 2"></polyline>
                 </svg>
               </button>
               <!-- 下载按钮（下载中时不显示，下载完成后显示已完成） -->
@@ -978,6 +1006,13 @@ function handleImageError(event: Event) {
       @close="handlePlayerClose"
       @play-next="handlePlayNext"
       @delete-current="handleDeleteCurrent"
+    />
+
+    <!-- DLNA 投屏弹窗 -->
+    <DlnaCastDialog
+      v-if="dlnaVideo"
+      :video="dlnaVideo"
+      @close="closeDlnaDialog"
     />
   </div>
 </template>
