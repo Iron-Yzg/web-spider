@@ -27,6 +27,7 @@ const isStartingServer = ref(false)
 const isCasting = ref(false)
 const statusMessage = ref('')
 const selectedDevice = ref<string | null>(null)
+const castDeviceName = ref<string | null>(null)
 
 onMounted(async () => {
   await handleStartServer()
@@ -77,10 +78,7 @@ async function handleStartServer() {
 }
 
 async function handleCast() {
-  if (!selectedDevice.value && !serverUrl.value) return
-  
-  // 如果没有选择设备但有服务器URL，仍然启动服务器
-  if (!selectedDevice.value && serverUrl.value) {
+  if (!selectedDevice.value) {
     statusMessage.value = '请选择投屏设备'
     return
   }
@@ -89,54 +87,30 @@ async function handleCast() {
   statusMessage.value = '正在投屏...'
   
   try {
-    if (selectedDevice.value && serverUrl.value) {
-      await castToDlnaDevice(
-        selectedDevice.value,
-        serverUrl.value,
-        props.video.name
-      )
-      statusMessage.value = '已发送播放命令，请查看电视。如果电视没有响应，请在电视浏览器中打开: ' + serverUrl.value
-    } else if (serverUrl.value) {
-      // 没有DLNA设备时，显示服务器URL
-      statusMessage.value = '服务器已启动，请在电视浏览器中打开: ' + serverUrl.value
-    }
+    castDeviceName.value = selectedDevice.value
+    await castToDlnaDevice(
+      selectedDevice.value,
+      serverUrl.value,
+      props.video.name
+    )
+    statusMessage.value = '已发送播放命令，请查看电视'
   } catch (e) {
-    // 失败时也显示URL，让用户可以手动在电视打开
-    if (serverUrl.value) {
-      statusMessage.value = '投屏失败，请在电视浏览器中打开: ' + serverUrl.value
-    } else {
-      statusMessage.value = `投屏失败: ${e}`
-    }
+    statusMessage.value = `投屏失败: ${e}`
   } finally {
     isCasting.value = false
   }
 }
 
-async function handleStopServer() {
-  try {
-    await stopDlnaMediaServer()
-    serverUrl.value = ''
-    statusMessage.value = '服务器已停止'
-  } catch (e) {
-    statusMessage.value = `停止服务器失败: ${e}`
-  }
-}
-
 async function handleClose() {
-  if (serverUrl.value && selectedDevice.value) {
-    try {
-      await stopDlnaPlayback(selectedDevice.value)
-    } catch (e) {
-      console.error('停止播放失败:', e)
-    }
+  // 异步停止电视播放和服务器，不等待完成
+  if (castDeviceName.value) {
+    stopDlnaPlayback(castDeviceName.value).catch(e => console.error('停止播放失败:', e))
   }
+  
   if (serverUrl.value) {
-    try {
-      await stopDlnaMediaServer()
-    } catch (e) {
-      console.error('停止服务器失败:', e)
-    }
+    stopDlnaMediaServer().catch(e => console.error('停止服务器失败:', e))
   }
+  
   emit('close')
 }
 </script>
@@ -171,30 +145,7 @@ async function handleClose() {
               <line x1="12" y1="8" x2="12" y2="12"></line>
               <line x1="12" y1="16" x2="12.01" y2="16"></line>
             </svg>
-            {{ isDiscovering ? '搜索中...' : '搜索设备' }}
-          </button>
-          
-          <button 
-            v-if="!serverUrl"
-            @click="handleStartServer" 
-            :disabled="isStartingServer || !video"
-            class="action-btn primary"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polygon points="5 3 19 12 5 21 5 3"></polygon>
-            </svg>
-            {{ isStartingServer ? '启动中...' : '启动服务器' }}
-          </button>
-          
-          <button 
-            v-else
-            @click="handleStopServer" 
-            class="action-btn danger"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="6" y="6" width="12" height="12"></rect>
-            </svg>
-            停止服务器
+            {{ isDiscovering ? '搜索中...' : '刷新设备' }}
           </button>
         </div>
         

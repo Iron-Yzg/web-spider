@@ -183,6 +183,7 @@ pub fn run() {
             commands::get_local_ip_address,
             commands::start_dlna_media_server,
             commands::stop_dlna_media_server,
+            commands::stop_dlna_playback,
             commands::cast_to_dlna_device,
         ]);
 
