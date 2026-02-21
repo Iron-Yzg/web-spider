@@ -55,9 +55,6 @@ const savedSize = ref({ width: 0, height: 0 })
 // 防止重复创建
 const isCreating = ref(false)
 
-// 浏览器原生支持的视频格式
-const NATIVE_SUPPORTED_FORMATS = ['.mp4', '.webm', '.mov', '.m4v', '.ogv', '.ogg']
-
 // 需要转码的格式
 const TRANSCODE_FORMATS = ['.mkv', '.avi', '.flv', '.wmv', '.rm', '.rmvb', '.ts', '.mpeg', '.mpg']
 
@@ -70,12 +67,6 @@ function needsTranscoding(url: string): boolean {
   // 本地文件检查扩展名
   const lowerUrl = url.toLowerCase()
   return TRANSCODE_FORMATS.some(ext => lowerUrl.endsWith(ext))
-}
-
-// 获取文件扩展名
-function getFileExtension(url: string): string {
-  const match = url.match(/\.([a-zA-Z0-9]+)$/)
-  return match ? match[1].toLowerCase() : ''
 }
 
 // 开始视频播放（自动选择解复用或转码）

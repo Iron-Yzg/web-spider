@@ -5,6 +5,7 @@ import type { VideoItem, ScrapeResult, DownloadProgress, PaginatedVideos, Websit
 import { VideoStatus } from '../types'
 import VideoPlayer from '../components/VideoPlayer.vue'
 import DlnaCastDialog from '../components/DlnaCastDialog.vue'
+import IconButton from '../components/IconButton.vue'
 import {
   getVideos as fetchVideos,
   searchVideos as searchVideosApi,
@@ -518,18 +519,6 @@ async function deleteSelected() {
   }
 }
 
-async function copyUrl(url: string) {
-  try {
-    await navigator.clipboard.writeText(url)
-    copyMessage.value = '已复制到剪贴板'
-    setTimeout(() => {
-      copyMessage.value = ''
-    }, 2000)
-  } catch (e) {
-    console.error('复制失败:', e)
-  }
-}
-
 async function clearDownloaded() {
   // 使用自定义确认对话框
   confirmDialog.value = {
@@ -594,11 +583,11 @@ function getStatusText(status: VideoStatus): string {
 
 function getStatusClass(status: VideoStatus): string {
   const map: Record<VideoStatus, string> = {
-    [VideoStatus.Pending]: 'status-pending',
-    [VideoStatus.Scraped]: 'status-scraped',
-    [VideoStatus.Downloading]: 'status-downloading',
-    [VideoStatus.Downloaded]: 'status-downloaded',
-    [VideoStatus.Failed]: 'status-failed'
+    [VideoStatus.Pending]: 'bg-amber-100 text-amber-700',
+    [VideoStatus.Scraped]: 'bg-blue-100 text-blue-700',
+    [VideoStatus.Downloading]: 'bg-green-100 text-green-700',
+    [VideoStatus.Downloaded]: 'bg-green-100 text-green-700',
+    [VideoStatus.Failed]: 'bg-red-100 text-red-700'
   }
   return map[status] || ''
 }
@@ -717,52 +706,29 @@ function handleImageError(event: Event) {
 </script>
 
 <template>
-  <div class="scraper-page">
-    <!-- 顶部搜索栏 -->
-    <div class="search-bar">
-      <!-- 网站选择 -->
-      <select v-model="selectedWebsite" :disabled="isScraping" class="website-select">
-        <option v-for="site in websites" :key="site.id" :value="site.id">
-          {{ site.name }}
-        </option>
+  <div class="h-full flex flex-col bg-white rounded-xl shadow-[0_2px_12px_rgba(0,0,0,0.06)] overflow-hidden">
+    <div class="flex gap-2.5 px-5 py-4 border-b border-[#f0f0f0] shrink-0">
+      <select v-model="selectedWebsite" :disabled="isScraping" class="px-3.5 py-2.5 border border-[#e8e8e8] rounded-lg text-sm bg-white cursor-pointer min-w-[140px] transition-all focus:outline-none focus:border-[#667eea] focus:shadow-[0_0_0_3px_rgba(102,126,234,0.1)] disabled:opacity-60 disabled:cursor-not-allowed disabled:bg-[#fafbfc]">
+        <option v-for="site in websites" :key="site.id" :value="site.id">{{ site.name }}</option>
       </select>
-      <input
-        type="text"
-        v-model="videoId"
-        placeholder="输入视频ID"
-        @keyup.enter="scrape"
-        :disabled="isScraping"
-        class="search-input"
-      />
-      <button @click="scrape" :disabled="isScraping" class="search-btn">
-        {{ isScraping ? '爬取中...' : '爬取' }}
-      </button>
+      <input type="text" v-model="videoId" placeholder="输入视频ID" @keyup.enter="scrape" :disabled="isScraping" class="flex-1 px-3.5 py-2.5 border border-[#e8e8e8] rounded-lg text-sm transition-all focus:outline-none focus:border-[#667eea] focus:shadow-[0_0_0_3px_rgba(102,126,234,0.1)]" />
+      <button @click="scrape" :disabled="isScraping" class="px-6 py-2.5 text-white border-none rounded-lg text-sm font-medium cursor-pointer whitespace-nowrap transition-all bg-[linear-gradient(135deg,#667eea_0%,#764ba2_100%)] hover:-translate-y-0.5 hover:shadow-[0_4px_12px_rgba(102,126,234,0.35)] disabled:opacity-60 disabled:cursor-not-allowed">{{ isScraping ? '爬取中...' : '爬取' }}</button>
     </div>
 
-    <!-- 爬取结果提示 -->
-    <div v-if="scrapeResult" :class="['result-toast', scrapeResult.success ? 'success' : 'error']">
-      <span v-if="scrapeResult.success"> {{ scrapeResult.name }}</span>
-      <span v-else> {{ scrapeResult.message }}</span>
+    <div v-if="scrapeResult" :class="['mx-5 px-3.5 py-2.5 rounded-lg text-[13px] shrink-0', scrapeResult.success ? 'bg-[#f0fdf4] text-[#166534] border border-[#bbf7d0]' : 'bg-[#fef2f2] text-[#991b1b] border border-[#fecaca]']">
+      <span v-if="scrapeResult.success">{{ scrapeResult.name }}</span>
+      <span v-else>{{ scrapeResult.message }}</span>
     </div>
 
-    <!-- 视频列表 -->
-    <div class="video-section">
-      <div class="section-header">
-        <div class="header-left">
-          <span class="section-title">视频列表 ({{ filteredVideos.length }}/{{ videos.length }})</span>
-          <span v-if="copyMessage" class="copy-success">{{ copyMessage }}</span>
+    <div class="flex-1 flex flex-col overflow-hidden">
+      <div class="flex justify-between items-center px-5 py-3 bg-[#fafbfc] border-b border-[#f0f0f0] shrink-0">
+        <div class="flex items-center gap-3">
+          <span class="text-sm font-semibold text-[#1a1a2e]">视频列表 ({{ filteredVideos.length }}/{{ videos.length }})</span>
+          <span v-if="copyMessage" class="text-[13px] text-[#22c55e] font-medium">{{ copyMessage }}</span>
         </div>
-        <div class="header-right">
-          <!-- 搜索框 -->
-          <input
-            type="text"
-            v-model="searchQuery"
-            @input="filterVideos"
-            placeholder="搜索视频名称"
-            class="filter-input"
-          />
-          <!-- 状态筛选 -->
-          <select v-model="statusFilter" @change="filterVideos" class="filter-select">
+        <div class="flex items-center gap-2.5">
+          <input type="text" v-model="searchQuery" @input="filterVideos" placeholder="搜索视频名称" class="px-3 py-1.5 border border-[#e8e8e8] rounded-md text-[13px] w-[180px] transition-all focus:outline-none focus:border-[#667eea]" />
+          <select v-model="statusFilter" @change="filterVideos" class="px-3 py-1.5 border border-[#e8e8e8] rounded-md text-[13px] bg-white cursor-pointer transition-all focus:outline-none focus:border-[#667eea]">
             <option value="">全部状态</option>
             <option :value="VideoStatus.Pending">待爬取</option>
             <option :value="VideoStatus.Scraped">已爬取</option>
@@ -770,83 +736,34 @@ function handleImageError(event: Event) {
             <option :value="VideoStatus.Downloaded">已下载</option>
             <option :value="VideoStatus.Failed">失败</option>
           </select>
-          <!-- 批量操作按钮 -->
-          <button
-            v-if="selectedIds.size > 0"
-            @click="batchDownload"
-            class="batch-btn batch-download"
-          >
-            下载选中 ({{ selectedIds.size }})
-          </button>
-          <button
-            v-if="selectedIds.size > 0"
-            @click="deleteSelected"
-            class="batch-btn batch-delete"
-          >
-            删除选中
-          </button>
-          <button
-            v-if="videos.some(v => v.status === VideoStatus.Downloaded)"
-            @click="clearDownloaded"
-            class="clear-btn"
-          >
-            清除已下载
-          </button>
+          <button v-if="selectedIds.size > 0" @click="batchDownload" class="px-3.5 py-1.5 border-none rounded-md text-xs font-medium cursor-pointer transition-all bg-[#22c55e] text-white hover:bg-[#16a34a]">下载选中 ({{ selectedIds.size }})</button>
+          <button v-if="selectedIds.size > 0" @click="deleteSelected" class="px-3.5 py-1.5 border-none rounded-md text-xs font-medium cursor-pointer transition-all bg-[#fee2e2] text-[#dc2626] hover:bg-[#fecaca]">删除选中</button>
+          <button v-if="videos.some(v => v.status === VideoStatus.Downloaded)" @click="clearDownloaded" class="px-3 py-1 bg-transparent text-[#667eea] border border-[#667eea] rounded-md text-xs cursor-pointer transition-all hover:bg-[#667eea] hover:text-white">清除已下载</button>
         </div>
       </div>
 
-      <div class="video-table">
-        <div class="table-header">
-          <div class="col-checkbox">
-            <input
-              type="checkbox"
-              @change="toggleSelectAll"
-              :checked="filteredVideos.length > 0 && filteredVideos.every(v => selectedIds.has(v.id) || v.status === VideoStatus.Downloaded || v.status === VideoStatus.Downloading)"
-              :indeterminate="selectedIds.size > 0 && !filteredVideos.every(v => selectedIds.has(v.id) || v.status === VideoStatus.Downloaded || v.status === VideoStatus.Downloading)"
-            />
+      <div class="flex-1 flex flex-col overflow-hidden">
+        <div class="flex px-5 py-2.5 bg-[#f8f9fa] border-b border-[#eee] text-xs font-semibold text-[#64748b] uppercase tracking-[0.5px] items-center">
+          <div class="w-8 shrink-0">
+            <input type="checkbox" @change="toggleSelectAll" :checked="filteredVideos.length > 0 && filteredVideos.every(v => selectedIds.has(v.id) || v.status === VideoStatus.Downloaded || v.status === VideoStatus.Downloading)" :indeterminate="selectedIds.size > 0 && !filteredVideos.every(v => selectedIds.has(v.id) || v.status === VideoStatus.Downloaded || v.status === VideoStatus.Downloading)" class="w-4 h-4 cursor-pointer" />
           </div>
-          <span class="col-name">名称</span>
-          <span class="col-status">状态</span>
-          <span class="col-action">操作</span>
+          <span class="flex-1 min-w-0 pr-4">名称</span>
+          <span class="w-[100px] pr-4">状态</span>
+          <span class="w-[150px] shrink-0">操作</span>
         </div>
 
-        <div
-        class="table-body"
-        @scroll="handleScroll"
-        ref="tableBodyRef"
-      >
-          <div v-if="videos.length === 0 && !isLoadingMore" class="empty-tip">
-            输入视频ID开始爬取
-          </div>
-          <div v-else-if="filteredVideos.length === 0 && !isLoadingMore" class="empty-tip">
-            没有找到匹配的视频
-          </div>
-          <div v-else-if="isLoadingMore && videos.length === 0" class="empty-tip">
-            加载中...
-          </div>
+        <div class="flex-1 overflow-y-auto" @scroll="handleScroll" ref="tableBodyRef">
+          <div v-if="videos.length === 0 && !isLoadingMore" class="py-10 px-5 text-center text-[#94a3b8] text-[13px]">输入视频ID开始爬取</div>
+          <div v-else-if="filteredVideos.length === 0 && !isLoadingMore" class="py-10 px-5 text-center text-[#94a3b8] text-[13px]">没有找到匹配的视频</div>
+          <div v-else-if="isLoadingMore && videos.length === 0" class="py-10 px-5 text-center text-[#94a3b8] text-[13px]">加载中...</div>
 
-          <div v-for="video in filteredVideos" :key="video.id" class="table-row">
-            <div class="col-checkbox">
-              <input
-                type="checkbox"
-                :checked="selectedIds.has(video.id)"
-                :disabled="video.status === VideoStatus.Downloaded || video.status === VideoStatus.Downloading"
-                @change="toggleSelect(video.id)"
-              />
+          <div v-for="video in filteredVideos" :key="video.id" class="flex items-center px-5 py-3 border-b border-[#f5f5f5] transition-colors hover:bg-[#fafbfc]">
+            <div class="w-8 shrink-0">
+              <input type="checkbox" :checked="selectedIds.has(video.id)" :disabled="video.status === VideoStatus.Downloaded || video.status === VideoStatus.Downloading" @change="toggleSelect(video.id)" class="w-4 h-4 cursor-pointer" />
             </div>
-            <!-- 封面图片 -->
-            <div class="col-cover" @click="openPlayer(video)">
-              <img
-                v-if="video.cover_url"
-                :src="video.cover_url"
-                :alt="video.name"
-                class="cover-thumbnail"
-                @error="handleImageError"
-                @mouseenter="showCoverPopup($event, video.cover_url)"
-                @mousemove="moveCoverPopup($event)"
-                @mouseleave="hideCoverPopup"
-              />
-              <div v-else class="cover-placeholder-small">
+            <div class="w-[60px] h-[34px] mr-3 cursor-pointer relative overflow-hidden rounded bg-[#f5f5f5] shrink-0" @click="openPlayer(video)">
+              <img v-if="video.cover_url" :src="video.cover_url" :alt="video.name" class="w-full h-full object-cover transition-transform duration-200 hover:scale-[1.2]" @error="handleImageError" @mouseenter="showCoverPopup($event, video.cover_url)" @mousemove="moveCoverPopup($event)" @mouseleave="hideCoverPopup" />
+              <div v-else class="w-full h-full flex items-center justify-center bg-[#f8f9fa] text-[#cbd5e1]">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                   <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect>
                   <line x1="7" y1="2" x2="7" y2="22"></line>
@@ -855,16 +772,16 @@ function handleImageError(event: Event) {
                 </svg>
               </div>
             </div>
-            <div class="col-name">
-              <span class="video-name" :title="video.name">{{ video.name }}</span>
-              <div class="video-tags">
-                <span v-if="video.view_count !== undefined && video.view_count !== null" class="tag tag-views">
+            <div class="flex-1 min-w-0 pr-4">
+              <span class="block text-sm font-medium text-[#1a1a2e] whitespace-nowrap overflow-hidden text-ellipsis" :title="video.name">{{ video.name }}</span>
+              <div class="flex gap-2 mt-1">
+                <span v-if="video.view_count !== undefined && video.view_count !== null" class="inline-flex items-center gap-[3px] px-1.5 py-0.5 rounded text-[11px] font-medium bg-[#f0f9ff] text-[#0369a1]">
                   <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <polygon points="5 3 19 12 5 21 5 3"></polygon>
                   </svg>
                   {{ formatCount(video.view_count) }}
                 </span>
-                <span v-if="video.favorite_count !== undefined && video.favorite_count !== null" class="tag tag-favorites">
+                <span v-if="video.favorite_count !== undefined && video.favorite_count !== null" class="inline-flex items-center gap-[3px] px-1.5 py-0.5 rounded text-[11px] font-medium bg-[#fef2f2] text-[#dc2626]">
                   <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
                   </svg>
@@ -872,759 +789,61 @@ function handleImageError(event: Event) {
                 </span>
               </div>
             </div>
-            <div class="col-status">
-              <!-- 下载中显示进度条 -->
-              <div v-if="isDownloading(video)" class="xunlei-progress">
-                <div class="xunlei-progress-bar">
-                  <div
-                    class="xunlei-progress-fill"
-                    :style="{ width: getProgress(downloadProgress[video.id]) + '%' }"
-                  ></div>
+            <div class="w-[100px] pr-4">
+              <div v-if="isDownloading(video)" class="w-full">
+                <div class="h-1.5 bg-[#e5e7eb] rounded-[3px] overflow-hidden mb-1">
+                  <div class="h-full rounded-[3px] transition-all duration-300 bg-[linear-gradient(90deg,#22c55e,#16a34a)]" :style="{ width: getProgress(downloadProgress[video.id]) + '%' }"></div>
                 </div>
-                <div class="xunlei-progress-info">
-                  <span class="xunlei-percent">{{ Math.round(getProgress(downloadProgress[video.id])) }}%</span>
-                  <span class="xunlei-speed">{{ downloadProgress[video.id]?.speed || '0 MB/s' }}</span>
+                <div class="flex justify-between items-center text-[10px]">
+                  <span class="text-[#16a34a] font-semibold">{{ Math.round(getProgress(downloadProgress[video.id])) }}%</span>
+                  <span class="text-[#64748b]">{{ downloadProgress[video.id]?.speed || '0 MB/s' }}</span>
                 </div>
               </div>
-              <!-- 非下载状态显示状态标签 -->
-              <span v-else :class="['status-tag', getStatusClass(video.status)]">
-                {{ getStatusText(video.status) }}
-              </span>
+              <span v-else :class="['inline-block px-2.5 py-1 rounded-full text-[11px] font-medium', getStatusClass(video.status)]">{{ getStatusText(video.status) }}</span>
             </div>
-            <div class="col-action">
-              <!-- 播放按钮（仅已爬取或已下载的视频可播放） -->
-              <button
-                @click="openPlayer(video)"
-                class="action-btn play"
-                title="播放"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none">
-                  <polygon points="5 3 19 12 5 21 5 3"></polygon>
-                </svg>
-              </button>
-              <!-- DLNA 投屏按钮（仅已下载的视频可投屏） -->
-              <button
-                @click="openDlnaDialog(video)"
-                class="action-btn cast"
-                title="DLNA 投屏"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <rect x="2" y="7" width="20" height="15" rx="2" ry="2"></rect>
-                  <polyline points="17 2 12 7 7 2"></polyline>
-                </svg>
-              </button>
-              <!-- 下载按钮（下载中时不显示，下载完成后显示已完成） -->
-              <button
-                @click="downloadVideoItem(video)"
-                class="action-btn download"
-                title="下载"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                  <polyline points="7 10 12 15 17 10"></polyline>
-                  <line x1="12" y1="15" x2="12" y2="3"></line>
-                </svg>
-              </button>
-              <!-- 删除按钮 -->
-              <button @click="deleteVideo(video.id)" class="action-btn delete" title="删除">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <line x1="18" y1="6" x2="6" y2="18"></line>
-                  <line x1="6" y1="6" x2="18" y2="18"></line>
-                </svg>
-              </button>
+            <div class="w-[150px] flex items-center gap-1.5 shrink-0">
+              <IconButton variant="play" title="播放" @click="openPlayer(video)" />
+              <IconButton variant="cast" title="DLNA 投屏" @click="openDlnaDialog(video)" />
+              <IconButton variant="download" title="下载" @click="downloadVideoItem(video)" />
+              <IconButton variant="delete" title="删除" @click="deleteVideo(video.id)" />
             </div>
           </div>
 
-          <!-- 加载更多 -->
-          <div v-if="hasMore || isLoadingMore" class="load-more">
-            <button
-              v-if="hasMore && !isLoadingMore"
-              @click="loadMore"
-              class="load-more-btn"
-            >
-              加载更多
-            </button>
-            <span v-else-if="isLoadingMore" class="loading-text">加载中...</span>
+          <div v-if="hasMore || isLoadingMore" class="p-4 text-center">
+            <button v-if="hasMore && !isLoadingMore" @click="loadMore" class="px-6 py-2 bg-[#f1f5f9] text-[#64748b] border-none rounded-md text-[13px] cursor-pointer transition-all hover:bg-[#e2e8f0] hover:text-[#475569]">加载更多</button>
+            <span v-else-if="isLoadingMore" class="text-[13px] text-[#94a3b8]">加载中...</span>
           </div>
 
-          <!-- 底部统计 -->
-          <div v-if="videos.length > 0" class="pagination-info">
-            共 {{ total }} 条视频，当前显示 {{ videos.length }} 条
-          </div>
+          <div v-if="videos.length > 0" class="py-3 px-5 text-right text-xs text-[#94a3b8] border-t border-[#f0f0f0]">共 {{ total }} 条视频，当前显示 {{ videos.length }} 条</div>
         </div>
       </div>
     </div>
 
-    <!-- 日志弹窗 -->
-    <LogPopup
-      ref="logPopupRef"
-      :visible="logPopupVisible"
-      title="爬取日志"
-      @close="handleLogPopupClose"
-    />
+    <LogPopup ref="logPopupRef" :visible="logPopupVisible" title="爬取日志" @close="handleLogPopupClose" />
 
-    <!-- 确认对话框 -->
     <Teleport to="body">
-      <div v-if="confirmDialog.visible" class="confirm-overlay" @click="handleCancel">
-        <div class="confirm-dialog" @click.stop>
-          <div class="confirm-content">{{ confirmDialog.message }}</div>
-          <div class="confirm-actions">
-            <button class="confirm-btn cancel" @click="handleCancel">取消</button>
-            <button class="confirm-btn ok" @click="handleConfirm">确定</button>
+      <div v-if="confirmDialog.visible" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000]" @click="handleCancel">
+        <div class="bg-white rounded-xl p-6 min-w-[300px] shadow-[0_4px_20px_rgba(0,0,0,0.15)]" @click.stop>
+          <div class="text-[15px] text-[#1a1a2e] mb-5 text-center">{{ confirmDialog.message }}</div>
+          <div class="flex gap-3 justify-center">
+            <button class="px-6 py-2 border-none rounded-lg text-sm font-medium cursor-pointer transition-all bg-[#f1f5f9] text-[#64748b] hover:bg-[#e2e8f0]" @click="handleCancel">取消</button>
+            <button class="px-6 py-2 border-none rounded-lg text-sm font-medium cursor-pointer transition-all bg-[#4f46e5] text-white hover:bg-[#4338ca]" @click="handleConfirm">确定</button>
           </div>
         </div>
       </div>
     </Teleport>
 
-    <!-- 封面浮窗（放大2倍显示） -->
     <Teleport to="body">
-      <div
-        v-if="coverPopupVisible"
-        class="cover-popup"
-        :style="{
-          left: coverPopupPosition.x + 20 + 'px',
-          top: coverPopupPosition.y - 150 + 'px'
-        }"
-        @mouseleave="hideCoverPopup"
-      >
-        <img
-          :src="coverPopupImage"
-          alt="封面预览"
-          class="cover-popup-image"
-        />
+      <div v-if="coverPopupVisible" class="fixed z-[1000] p-2 bg-white rounded-lg shadow-[0_4px_20px_rgba(0,0,0,0.2)] pointer-events-auto" :style="{ left: coverPopupPosition.x + 20 + 'px', top: coverPopupPosition.y - 150 + 'px' }" @mouseleave="hideCoverPopup">
+        <img :src="coverPopupImage" alt="封面预览" class="w-[400px] h-auto object-contain rounded block" />
       </div>
     </Teleport>
 
-    <!-- 视频播放器 -->
-    <VideoPlayer
-      :visible="playerVisible"
-      :src="playerSrc"
-      :title="playerTitle"
-      :playlist="playerPlaylist"
-      :current-index="currentVideoIndex"
-      :video-id="playerVideoId"
-      @close="handlePlayerClose"
-      @play-next="handlePlayNext"
-      @delete-current="handleDeleteCurrent"
-    />
+    <VideoPlayer :visible="playerVisible" :src="playerSrc" :title="playerTitle" :playlist="playerPlaylist" :current-index="currentVideoIndex" :video-id="playerVideoId" @close="handlePlayerClose" @play-next="handlePlayNext" @delete-current="handleDeleteCurrent" />
 
-    <!-- DLNA 投屏弹窗 -->
-    <DlnaCastDialog
-      v-if="dlnaVideo"
-      :video="dlnaVideo"
-      @close="closeDlnaDialog"
-    />
+    <DlnaCastDialog v-if="dlnaVideo" :video="dlnaVideo" @close="closeDlnaDialog" />
   </div>
 </template>
 
 <style scoped>
-.scraper-page {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
-  overflow: hidden;
-}
-
-/* 搜索栏 */
-.search-bar {
-  display: flex;
-  gap: 10px;
-  padding: 16px 20px;
-  border-bottom: 1px solid #f0f0f0;
-  flex-shrink: 0;
-}
-
-.website-select {
-  padding: 10px 14px;
-  border: 1px solid #e8e8e8;
-  border-radius: 8px;
-  font-size: 14px;
-  background: white;
-  cursor: pointer;
-  min-width: 140px;
-  transition: all 0.2s;
-}
-
-.website-select:focus {
-  outline: none;
-  border-color: #667eea;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-}
-
-.website-select:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-  background: #fafbfc;
-}
-
-.search-input {
-  flex: 1;
-  padding: 10px 14px;
-  border: 1px solid #e8e8e8;
-  border-radius: 8px;
-  font-size: 14px;
-  transition: all 0.2s;
-}
-
-.search-input:focus {
-  outline: none;
-  border-color: #667eea;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-}
-
-.search-btn {
-  padding: 10px 24px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  border: none;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-  white-space: nowrap;
-}
-
-.search-btn:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.35);
-}
-
-.search-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-/* 结果提示 */
-.result-toast {
-  margin: 0 20px;
-  padding: 10px 14px;
-  border-radius: 8px;
-  font-size: 13px;
-  flex-shrink: 0;
-}
-
-.result-toast.success {
-  background: #f0fdf4;
-  color: #166534;
-  border: 1px solid #bbf7d0;
-}
-
-.result-toast.error {
-  background: #fef2f2;
-  color: #991b1b;
-  border: 1px solid #fecaca;
-}
-
-/* 视频区域 */
-.video-section {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 20px;
-  background: #fafbfc;
-  border-bottom: 1px solid #f0f0f0;
-  flex-shrink: 0;
-}
-
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.section-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #1a1a2e;
-}
-
-.filter-input {
-  padding: 6px 12px;
-  border: 1px solid #e8e8e8;
-  border-radius: 6px;
-  font-size: 13px;
-  width: 180px;
-  transition: all 0.2s;
-}
-
-.filter-input:focus {
-  outline: none;
-  border-color: #667eea;
-}
-
-.filter-select {
-  padding: 6px 12px;
-  border: 1px solid #e8e8e8;
-  border-radius: 6px;
-  font-size: 13px;
-  background: white;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.filter-select:focus {
-  outline: none;
-  border-color: #667eea;
-}
-
-.batch-btn {
-  padding: 6px 14px;
-  border: none;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.batch-download {
-  background: #22c55e;
-  color: white;
-}
-
-.batch-download:hover {
-  background: #16a34a;
-}
-
-.batch-delete {
-  background: #fee2e2;
-  color: #dc2626;
-}
-
-.batch-delete:hover {
-  background: #fecaca;
-}
-
-.clear-btn {
-  padding: 4px 12px;
-  background: transparent;
-  color: #667eea;
-  border: 1px solid #667eea;
-  border-radius: 6px;
-  font-size: 12px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.clear-btn:hover {
-  background: #667eea;
-  color: white;
-}
-
-.copy-success {
-  color: #22c55e;
-  font-size: 13px;
-  font-weight: 500;
-  animation: fadeIn 0.3s ease;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(-5px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-/* 表格 */
-.video-table {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.table-header {
-  display: flex;
-  padding: 10px 20px;
-  background: #f8f9fa;
-  border-bottom: 1px solid #eee;
-  font-size: 12px;
-  font-weight: 600;
-  color: #64748b;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  align-items: center;
-}
-
-.table-body {
-  flex: 1;
-  overflow-y: auto;
-}
-
-.empty-tip {
-  padding: 40px 20px;
-  text-align: center;
-  color: #94a3b8;
-  font-size: 13px;
-}
-
-.table-row {
-  display: flex;
-  align-items: center;
-  padding: 12px 20px;
-  border-bottom: 1px solid #f5f5f5;
-  transition: background 0.15s;
-}
-
-.table-row:hover {
-  background: #fafbfc;
-}
-
-.col-checkbox {
-  width: 32px;
-  flex-shrink: 0;
-}
-
-.col-checkbox input {
-  cursor: pointer;
-  width: 16px;
-  height: 16px;
-}
-
-/* 封面图片列 */
-.col-cover {
-  width: 60px;
-  height: 34px;
-  flex-shrink: 0;
-  margin-right: 12px;
-  cursor: pointer;
-  position: relative;
-  overflow: hidden;
-  border-radius: 4px;
-  background: #f5f5f5;
-}
-
-.cover-thumbnail {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  transition: transform 0.2s ease;
-}
-
-.col-cover:hover .cover-thumbnail {
-  transform: scale(1.2);
-}
-
-.cover-placeholder-small {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #f8f9fa;
-  color: #cbd5e1;
-}
-
-/* 视频标签 */
-.video-tags {
-  display: flex;
-  gap: 8px;
-  margin-top: 4px;
-}
-
-.tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 11px;
-  font-weight: 500;
-}
-
-.tag-views {
-  background: #f0f9ff;
-  color: #0369a1;
-}
-
-.tag-favorites {
-  background: #fef2f2;
-  color: #dc2626;
-}
-
-.tag svg {
-  flex-shrink: 0;
-}
-
-.col-name {
-  flex: 1;
-  min-width: 0;
-  padding-right: 16px;
-}
-
-.video-name {
-  display: block;
-  font-size: 14px;
-  font-weight: 500;
-  color: #1a1a2e;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.video-url {
-  display: block;
-  font-size: 11px;
-  color: #94a3b8;
-  font-family: monospace;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  margin-top: 2px;
-}
-
-.col-status {
-  width: 100px;
-  padding-right: 16px;
-}
-
-.status-tag {
-  display: inline-block;
-  padding: 4px 10px;
-  border-radius: 12px;
-  font-size: 11px;
-  font-weight: 500;
-}
-
-.status-pending { background: #fef3c7; color: #d97706; }
-.status-scraped { background: #dbeafe; color: #2563eb; }
-.status-downloading { background: #dcfce7; color: #16a34a; }
-.status-downloaded { background: #dcfce7; color: #16a34a; }
-.status-failed { background: #fee2e2; color: #dc2626; }
-
-/* 迅雷风格进度条 */
-.xunlei-progress {
-  width: 100%;
-}
-
-.xunlei-progress-bar {
-  height: 6px;
-  background: #e5e7eb;
-  border-radius: 3px;
-  overflow: hidden;
-  margin-bottom: 4px;
-}
-
-.xunlei-progress-fill {
-  height: 100%;
-  background: linear-gradient(90deg, #22c55e, #16a34a);
-  border-radius: 3px;
-  transition: width 0.3s ease;
-}
-
-.xunlei-progress-info {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 10px;
-}
-
-.xunlei-percent {
-  color: #16a34a;
-  font-weight: 600;
-}
-
-.xunlei-speed {
-  color: #64748b;
-}
-
-.col-action {
-  width: 150px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-}
-
-.action-btn {
-  padding: 6px 10px;
-  border: none;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.action-btn.download {
-  background: #22c55e;
-  color: white;
-}
-
-.action-btn.download:hover {
-  background: #16a34a;
-}
-
-.action-btn.copy {
-  background: #e0e7ff;
-  color: #4f46e5;
-}
-
-.action-btn.copy:hover {
-  background: #c7d2fe;
-}
-
-.action-btn.play {
-  background: #fef3c7;
-  color: #d97706;
-}
-
-.action-btn.play:hover {
-  background: #fde68a;
-}
-
-.action-btn.delete {
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  background: #fee2e2;
-  color: #dc2626;
-}
-
-.action-btn.delete:hover {
-  background: #fecaca;
-}
-
-.done-tag {
-  padding: 6px 12px;
-  background: #f0fdf4;
-  color: #16a34a;
-  border-radius: 6px;
-  font-size: 12px;
-}
-
-/* 加载更多 */
-.load-more {
-  padding: 16px;
-  text-align: center;
-}
-
-.load-more-btn {
-  padding: 8px 24px;
-  background: #f1f5f9;
-  color: #64748b;
-  border: none;
-  border-radius: 6px;
-  font-size: 13px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.load-more-btn:hover {
-  background: #e2e8f0;
-  color: #475569;
-}
-
-.loading-text {
-  color: #94a3b8;
-  font-size: 13px;
-}
-
-.pagination-info {
-  padding: 12px 20px;
-  text-align: right;
-  font-size: 12px;
-  color: #94a3b8;
-  border-top: 1px solid #f0f0f0;
-}
-
-/* 确认对话框 */
-.confirm-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
-.confirm-dialog {
-  background: white;
-  border-radius: 12px;
-  padding: 24px;
-  min-width: 300px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-}
-
-.confirm-content {
-  font-size: 15px;
-  color: #1a1a2e;
-  margin-bottom: 20px;
-  text-align: center;
-}
-
-.confirm-actions {
-  display: flex;
-  gap: 12px;
-  justify-content: center;
-}
-
-.confirm-btn {
-  padding: 8px 24px;
-  border: none;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.confirm-btn.cancel {
-  background: #f1f5f9;
-  color: #64748b;
-}
-
-.confirm-btn.cancel:hover {
-  background: #e2e8f0;
-}
-
-.confirm-btn.ok {
-  background: #4f46e5;
-  color: white;
-}
-
-.confirm-btn.ok:hover {
-  background: #4338ca;
-}
-
-/* 封面浮窗 */
-.cover-popup {
-  position: fixed;
-  z-index: 1000;
-  padding: 8px;
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-  pointer-events: auto;
-}
-
-.cover-popup-image {
-  width: 400px;
-  height: auto;
-  object-fit: contain;
-  border-radius: 4px;
-  display: block;
-}
 </style>

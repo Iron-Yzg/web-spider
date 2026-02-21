@@ -1,0 +1,101 @@
+@import "tailwindcss";
+
+/* Custom theme configuration for the project */
+@theme {
+  /* Primary colors */
+  --color-primary: #667eea;
+  --color-primary-dark: #764ba2;
+  --color-primary-light: #eef2ff;
+  
+  /* Text colors */
+  --color-text-primary: #1a1a2e;
+  --color-text-secondary: #64748b;
+  --color-text-muted: #94a3b8;
+  --color-text-placeholder: #cbd5e1;
+  
+  /* Background colors */
+  --color-bg-main: #f5f7fa;
+  --color-bg-card: #fafbfc;
+  --color-bg-hover: #f8f9fa;
+  --color-bg-dark: #1a1a2e;
+  
+  /* Border colors */
+  --color-border-light: #f0f0f0;
+  --color-border-medium: #e8e8e8;
+  
+  /* Custom shadows */
+  --shadow-card: 0 2px 12px rgba(0, 0, 0, 0.06);
+  --shadow-button: 0 4px 12px rgba(102, 126, 234, 0.35);
+  --shadow-dialog: 0 4px 20px rgba(0, 0, 0, 0.15);
+  --shadow-player: 0 8px 32px rgba(0, 0, 0, 0.4);
+  --shadow-focus: 0 0 0 3px rgba(102, 126, 234, 0.1);
+  
+  /* Border radius */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 10px;
+  --radius-2xl: 12px;
+}
+
+/* Base styles */
+@layer base {
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+  
+  html, body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    background-color: var(--color-bg-main);
+    color: var(--color-text-primary);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow: hidden;
+    height: 100vh;
+  }
+  
+  #app {
+    height: 100vh;
+    overflow: hidden;
+  }
+}
+
+/* Custom utilities */
+@layer utilities {
+  .gradient-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  }
+  
+  .gradient-primary-hover {
+    background: linear-gradient(135deg, #5a67d8 0%, #6b46c1 100%);
+  }
+  
+  .gradient-success {
+    background: linear-gradient(90deg, #22c55e, #16a34a);
+  }
+  
+  .shadow-card {
+    box-shadow: var(--shadow-card);
+  }
+  
+  .shadow-button {
+    box-shadow: var(--shadow-button);
+  }
+  
+  .shadow-dialog {
+    box-shadow: var(--shadow-dialog);
+  }
+  
+  .shadow-player {
+    box-shadow: var(--shadow-player);
+  }
+  
+  .focus-ring {
+    outline: none;
+    border-color: #667eea;
+    box-shadow: var(--shadow-focus);
+  }
+}

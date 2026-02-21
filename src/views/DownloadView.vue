@@ -15,6 +15,7 @@ import {
 import AddTaskDialog from '../components/AddTaskDialog.vue'
 import VideoPlayer from '../components/VideoPlayer.vue'
 import DlnaCastDialog from '../components/DlnaCastDialog.vue'
+import IconButton from '../components/IconButton.vue'
 
 // 任务列表
 const tasks = ref<YtdlpTask[]>([])
@@ -194,13 +195,13 @@ function getStatusText(status: YtdlpTaskStatus): string {
 // 获取状态样式类
 function getStatusClass(status: YtdlpTaskStatus): string {
   const map: Record<string, string> = {
-    'Pending': 'status-pending',
-    'Queued': 'status-queued',
-    'Downloading': 'status-downloading',
-    'Paused': 'status-paused',
-    'Completed': 'status-completed',
-    'Failed': 'status-failed',
-    'Cancelled': 'status-cancelled',
+    'Pending': 'bg-amber-100 text-amber-700',
+    'Queued': 'bg-blue-100 text-blue-700',
+    'Downloading': 'bg-green-100 text-green-700',
+    'Paused': 'bg-amber-100 text-amber-700',
+    'Completed': 'bg-green-100 text-green-700',
+    'Failed': 'bg-red-100 text-red-700',
+    'Cancelled': 'bg-gray-100 text-gray-500',
   }
   return map[status] || ''
 }
@@ -334,687 +335,73 @@ watch([searchQuery, statusFilter, () => tasks.value], () => {
 </script>
 
 <template>
-  <div class="download-page">
-    <!-- 任务列表 -->
-    <div class="task-section">
-      <div class="section-header">
-        <div class="header-left">
-          <span class="section-title">下载任务 ({{ filteredTasks.length }}/{{ tasks.length }})</span>
-        </div>
-        <div class="header-right">
-          <!-- 搜索框 -->
-          <input
-            type="text"
-            v-model="searchQuery"
-            placeholder="搜索任务名称"
-            class="filter-input"
-          />
-          <!-- 状态筛选 -->
-          <select v-model="statusFilter" class="filter-select">
-            <option value="">全部状态</option>
-            <option value="Pending">等待中</option>
-            <option value="Queued">已队列</option>
-            <option value="Downloading">下载中</option>
-            <option value="Paused">已暂停</option>
-            <option value="Completed">已完成</option>
-            <option value="Failed">失败</option>
-            <option value="Cancelled">已取消</option>
+  <div class="h-full flex flex-col bg-white rounded-xl shadow-[0_2px_12px_rgba(0,0,0,0.06)] overflow-hidden">
+    <div class="flex-1 flex flex-col overflow-hidden">
+      <div class="flex justify-between items-center px-5 py-3 bg-[#fafbfc] border-b border-[#f0f0f0] shrink-0">
+        <div class="flex items-center gap-3"><span class="text-sm font-semibold text-[#1a1a2e]">下载任务 ({{ filteredTasks.length }}/{{ tasks.length }})</span></div>
+        <div class="flex items-center gap-2.5">
+          <input type="text" v-model="searchQuery" placeholder="搜索任务名称" class="px-3 py-1.5 border border-[#e8e8e8] rounded-md text-[13px] w-[180px] transition-all focus:outline-none focus:border-[#667eea]" />
+          <select v-model="statusFilter" class="px-3 py-1.5 border border-[#e8e8e8] rounded-md text-[13px] bg-white cursor-pointer transition-all focus:outline-none focus:border-[#667eea]">
+            <option value="">全部状态</option><option value="Pending">等待中</option><option value="Queued">已队列</option><option value="Downloading">下载中</option><option value="Paused">已暂停</option><option value="Completed">已完成</option><option value="Failed">失败</option><option value="Cancelled">已取消</option>
           </select>
-          <button
-            v-if="tasks.some(t => ['Completed', 'Failed', 'Cancelled'].includes(t.status))"
-            @click="cleanupTasks"
-            class="cleanup-btn"
-          >
-            清理已完成
-          </button>
-          <button
-            class="add-btn-small"
-            @click="openAddDialog"
-            :disabled="!ytdlpAvailable"
-            title="添加下载"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="12" y1="5" x2="12" y2="19"></line>
-              <line x1="5" y1="12" x2="19" y2="12"></line>
-            </svg>
-            添加
-          </button>
+          <button v-if="tasks.some(t => ['Completed', 'Failed', 'Cancelled'].includes(t.status))" @click="cleanupTasks" class="px-3 py-1 bg-transparent text-[#667eea] border border-[#667eea] rounded-md text-xs cursor-pointer transition-all hover:bg-[#667eea] hover:text-white">清理已完成</button>
+          <button class="inline-flex items-center gap-1 px-3 py-1.5 border-none rounded-md text-xs cursor-pointer transition-all text-white bg-[linear-gradient(135deg,#6366f1_0%,#8b5cf6_100%)] hover:-translate-y-0.5 hover:shadow-[0_4px_12px_rgba(99,102,241,0.4)] disabled:opacity-50 disabled:cursor-not-allowed" @click="openAddDialog" :disabled="!ytdlpAvailable" title="添加下载"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>添加</button>
         </div>
       </div>
 
-      <!-- 空状态 -->
-      <div v-if="tasks.length === 0" class="empty-state">
-        <div class="empty-icon">
-          <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-            <polyline points="7 10 12 15 17 10"></polyline>
-            <line x1="12" y1="15" x2="12" y2="3"></line>
-          </svg>
-        </div>
-        <p class="empty-text">暂无下载任务</p>
-        <button @click="openAddDialog" class="go-add-btn" :disabled="!ytdlpAvailable">添加下载</button>
+      <div v-if="tasks.length === 0" class="flex-1 flex flex-col items-center justify-center p-[60px] text-center">
+        <div class="text-[#334155] mb-4"><svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg></div>
+        <p class="text-base text-[#64748b] mb-5">暂无下载任务</p>
+        <button @click="openAddDialog" class="px-6 py-2.5 border-none rounded-lg text-sm text-white cursor-pointer bg-[linear-gradient(135deg,#6366f1_0%,#8b5cf6_100%)] disabled:opacity-50 disabled:cursor-not-allowed" :disabled="!ytdlpAvailable">添加下载</button>
       </div>
 
-      <!-- 任务表格 -->
-      <div v-else class="task-table">
-        <div class="table-header">
-          <span class="col-name">封面</span>
-          <span class="col-name">名称</span>
-          <span class="col-status">状态</span>
-          <span class="col-action">操作</span>
+      <div v-else class="flex-1 flex flex-col overflow-hidden">
+        <div class="flex px-5 py-2.5 bg-[#f8f9fa] border-b border-[#eee] text-xs font-semibold text-[#64748b] uppercase tracking-[0.5px] items-center">
+          <span class="w-[60px] mr-3">封面</span><span class="flex-1 min-w-0 pr-4">名称</span><span class="w-[120px] pr-4">状态</span><span class="w-[120px] shrink-0">操作</span>
         </div>
 
-        <div class="table-body">
-          <div v-if="filteredTasks.length === 0" class="empty-tip">
-            没有找到匹配的任务
-          </div>
+        <div class="flex-1 overflow-y-auto">
+          <div v-if="filteredTasks.length === 0" class="py-10 px-5 text-center text-[#94a3b8] text-[13px]">没有找到匹配的任务</div>
 
-          <div v-for="task in filteredTasks" :key="task.id" class="table-row" :class="{ running: task.status === 'Downloading' }">
-            <!-- 封面：已完成有本地文件的用 video 预览，否则用 thumbnail -->
-            <div class="col-cover">
-              <!-- 已下载完成的视频，用 video 标签显示预览 -->
-              <video
-                v-if="task.status === 'Completed' && task.file_path"
-                :ref="el => videoRefs[task.id] = el as HTMLVideoElement"
-                :src="convertFileSrc(task.file_path)"
-                class="cover-video"
-                muted
-                preload="auto"
-                @loadeddata="handleVideoLoaded(task.id)"
-              ></video>
-              <div v-else class="cover-placeholder-small">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                  <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect>
-                  <line x1="7" y1="2" x2="7" y2="22"></line>
-                  <line x1="17" y1="2" x2="17" y2="22"></line>
-                  <line x1="2" y1="12" x2="22" y2="12"></line>
-                </svg>
-              </div>
+          <div v-for="task in filteredTasks" :key="task.id" class="flex items-center px-5 py-3 border-b border-[#f5f5f5] transition-colors hover:bg-[#fafbfc]" :class="{ 'bg-[#f0f9ff]': task.status === 'Downloading' }">
+            <div class="w-[60px] h-[34px] mr-3 relative overflow-hidden rounded bg-[#f5f5f5] shrink-0">
+              <video v-if="task.status === 'Completed' && task.file_path" :ref="el => videoRefs[task.id] = el as HTMLVideoElement" :src="convertFileSrc(task.file_path)" class="w-full h-full object-cover bg-black" muted preload="auto" @loadeddata="handleVideoLoaded(task.id)"></video>
+              <div v-else class="w-full h-full flex items-center justify-center bg-[#f8f9fa] text-[#cbd5e1]"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line></svg></div>
             </div>
 
-            <!-- 名称 -->
-            <div class="col-name">
-              <span class="task-title" :title="task.title">{{ task.title || '未知标题' }}</span>
-              <span class="task-url" :title="task.url">{{ task.url }}</span>
-              <!-- 下载中显示进度信息 -->
-              <div v-if="task.status === 'Downloading'" class="task-progress-info">
-                <span class="progress-percent">{{ Math.round(task.progress) }}%</span>
-                <span v-if="task.speed" class="progress-speed">{{ task.speed }}</span>
-              </div>
-              <!-- 已完成显示文件路径 -->
-              <div v-if="task.status === 'Completed' && task.file_path" class="task-file-info">
-                <span class="file-path">{{ task.file_path }}</span>
-              </div>
+            <div class="flex-1 min-w-0 pr-4">
+              <span class="block text-sm font-medium text-[#1a1a2e] whitespace-nowrap overflow-hidden text-ellipsis" :title="task.title">{{ task.title || '未知标题' }}</span>
+              <span class="block mt-0.5 text-[11px] text-[#94a3b8] font-mono whitespace-nowrap overflow-hidden text-ellipsis" :title="task.url">{{ task.url }}</span>
+              <div v-if="task.status === 'Downloading'" class="mt-1 flex gap-3 text-[11px]"><span class="text-[#16a34a] font-semibold">{{ Math.round(task.progress) }}%</span><span v-if="task.speed" class="text-[#64748b]">{{ task.speed }}</span></div>
+              <div v-if="task.status === 'Completed' && task.file_path" class="mt-1"><span class="text-[11px] text-[#64748b] font-mono bg-[#f8f9fa] px-1.5 py-0.5 rounded">{{ task.file_path }}</span></div>
             </div>
 
-            <!-- 状态 -->
-            <div class="col-status">
-              <!-- 下载中显示进度条 -->
-              <div v-if="task.status === 'Downloading'" class="task-progress">
-                <div class="progress-bar">
-                  <div class="progress-fill" :style="{ width: task.progress + '%' }"></div>
-                </div>
-              </div>
-              <!-- 失败状态显示错误提示 -->
-              <div v-else-if="task.status === 'Failed'" class="status-error">
-                <span class="status-tag status-failed">{{ getStatusText(task.status) }}</span>
-                <span class="error-tooltip">{{ task.message || '下载失败' }}</span>
-              </div>
-              <!-- 其他状态显示标签 -->
-              <span v-else :class="['status-tag', getStatusClass(task.status)]">
-                {{ getStatusText(task.status) }}
-              </span>
+            <div class="w-[120px] pr-4">
+              <div v-if="task.status === 'Downloading'" class="w-full"><div class="h-1.5 bg-[#e5e7eb] rounded-[3px] overflow-hidden"><div class="h-full rounded-[3px] bg-[linear-gradient(90deg,#22c55e,#16a34a)] transition-all duration-300" :style="{ width: task.progress + '%' }"></div></div></div>
+              <div v-else-if="task.status === 'Failed'" class="relative inline-block group"><span :class="['inline-block px-2.5 py-1 rounded-full text-[11px] font-medium', getStatusClass(task.status)]">{{ getStatusText(task.status) }}</span><span class="invisible group-hover:visible absolute bottom-full left-1/2 -translate-x-1/2 bg-[#1e293b] text-[#fee2e2] px-3 py-2 rounded text-[11px] whitespace-nowrap max-w-[300px] overflow-hidden text-ellipsis z-[100] mb-1 shadow-[0_4px_12px_rgba(0,0,0,0.3)]">{{ task.message || '下载失败' }}</span></div>
+              <span v-else :class="['inline-block px-2.5 py-1 rounded-full text-[11px] font-medium', getStatusClass(task.status)]">{{ getStatusText(task.status) }}</span>
             </div>
 
-            <!-- 操作 -->
-            <div class="col-action">
-              <!-- 下载中显示停止 -->
-              <button
-                v-if="task.status === 'Downloading'"
-                @click="stopTask(task.id)"
-                class="action-btn stop"
-                title="停止"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none">
-                  <rect x="6" y="4" width="4" height="16"></rect>
-                  <rect x="14" y="4" width="4" height="16"></rect>
-                </svg>
-              </button>
-
-              <!-- 已暂停/失败/取消（未运行）显示开始 -->
-              <button
-                v-else-if="canStart(task)"
-                @click="startTask(task.id)"
-                class="action-btn start"
-                title="开始"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none">
-                  <polygon points="5 3 19 12 5 21 5 3"></polygon>
-                </svg>
-              </button>
-
-              <!-- 已完成（未运行）显示播放和文件夹 -->
+            <div class="w-[120px] flex items-center gap-1.5 shrink-0">
+              <IconButton v-if="task.status === 'Downloading'" variant="stop" title="停止" @click="stopTask(task.id)" />
+              <IconButton v-else-if="canStart(task)" variant="start" title="开始" @click="startTask(task.id)" />
               <template v-else-if="task.status === 'Completed' && task.file_path">
-                <button @click="openPlayer(task)" class="action-btn play" title="播放">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none">
-                    <polygon points="5 3 19 12 5 21 5 3"></polygon>
-                  </svg>
-                </button>
-                <button @click="openFolder(task.file_path!)" class="action-btn folder" title="打开文件夹">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-                  </svg>
-                </button>
-                <button @click="openDlnaDialog(task)" class="action-btn cast" title="投屏">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <rect x="2" y="7" width="20" height="15" rx="2" ry="2"></rect>
-                    <polyline points="17 2 12 7 7 2"></polyline>
-                  </svg>
-                </button>
+                <IconButton variant="play" title="播放" @click="openPlayer(task)" />
+                <IconButton variant="folder" title="打开文件夹" @click="openFolder(task.file_path!)" />
+                <IconButton variant="cast" title="投屏" @click="openDlnaDialog(task)" />
               </template>
-
-              <!-- 未运行且不是已完成的任务显示删除 -->
-              <button
-                @click="deleteTask(task.id)"
-                class="action-btn delete"
-                title="删除"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <polyline points="3 6 5 6 21 6"></polyline>
-                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                </svg>
-              </button>
+              <IconButton v-else variant="delete" title="删除" @click="deleteTask(task.id)" />
             </div>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- 添加下载弹窗 -->
-    <AddTaskDialog
-      :visible="showAddDialog"
-      @close="closeAddDialog"
-      @confirm="handleAddTasks"
-    />
-
-    <!-- 视频播放器 -->
-    <VideoPlayer
-      v-show="playerVisible"
-      :visible="playerVisible"
-      :src="playerSrc"
-      :title="playerTitle"
-      :playlist="playerPlaylist"
-      :current-index="currentVideoIndex"
-      @close="handlePlayerClose"
-      @play-next="handlePlayNext"
-      @delete-current="handleDeleteCurrent"
-    />
-
-    <!-- DLNA 投屏弹窗 -->
-    <DlnaCastDialog
-      v-if="dlnaVideo"
-      :video="dlnaVideo"
-      @close="closeDlnaDialog"
-    />
+    <AddTaskDialog :visible="showAddDialog" @close="closeAddDialog" @confirm="handleAddTasks" />
+    <VideoPlayer v-show="playerVisible" :visible="playerVisible" :src="playerSrc" :title="playerTitle" :playlist="playerPlaylist" :current-index="currentVideoIndex" @close="handlePlayerClose" @play-next="handlePlayNext" @delete-current="handleDeleteCurrent" />
+    <DlnaCastDialog v-if="dlnaVideo" :video="dlnaVideo" @close="closeDlnaDialog" />
   </div>
 </template>
 
 <style scoped>
-.download-page {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
-  overflow: hidden;
-}
-
-/* 任务区域 */
-.task-section {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 20px;
-  background: #fafbfc;
-  border-bottom: 1px solid #f0f0f0;
-  flex-shrink: 0;
-}
-
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.section-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #1a1a2e;
-}
-
-.tool-status {
-  font-size: 12px;
-  color: #94a3b8;
-  padding: 4px 10px;
-  background: #f3f4f6;
-  border-radius: 12px;
-  margin-left: 12px;
-}
-
-.tool-status.available {
-  background: #dcfce7;
-  color: #16a34a;
-}
-
-.filter-input {
-  padding: 6px 12px;
-  border: 1px solid #e8e8e8;
-  border-radius: 6px;
-  font-size: 13px;
-  width: 180px;
-  transition: all 0.2s;
-}
-
-.filter-input:focus {
-  outline: none;
-  border-color: #667eea;
-}
-
-.filter-select {
-  padding: 6px 12px;
-  border: 1px solid #e8e8e8;
-  border-radius: 6px;
-  font-size: 13px;
-  background: white;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.filter-select:focus {
-  outline: none;
-  border-color: #667eea;
-}
-
-.cleanup-btn {
-  padding: 6px 12px;
-  background: transparent;
-  color: #667eea;
-  border: 1px solid #667eea;
-  border-radius: 6px;
-  font-size: 12px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.cleanup-btn:hover {
-  background: #667eea;
-  color: white;
-}
-
-.add-btn-small {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 6px 12px;
-  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-  color: white;
-  border: none;
-  border-radius: 6px;
-  font-size: 12px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.add-btn-small:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
-}
-
-.add-btn-small:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* 空状态 */
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 60px 20px;
-  text-align: center;
-  flex: 1;
-}
-
-.empty-icon {
-  color: #334155;
-  margin-bottom: 16px;
-}
-
-.empty-text {
-  font-size: 16px;
-  color: #64748b;
-  margin-bottom: 20px;
-}
-
-.go-add-btn {
-  padding: 10px 24px;
-  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-  color: white;
-  border: none;
-  border-radius: 8px;
-  font-size: 14px;
-  cursor: pointer;
-}
-
-.go-add-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* 表格 */
-.task-table {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.table-header {
-  display: flex;
-  padding: 10px 20px;
-  background: #f8f9fa;
-  border-bottom: 1px solid #eee;
-  font-size: 12px;
-  font-weight: 600;
-  color: #64748b;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  align-items: center;
-}
-
-.table-body {
-  flex: 1;
-  overflow-y: auto;
-}
-
-.empty-tip {
-  padding: 40px 20px;
-  text-align: center;
-  color: #94a3b8;
-  font-size: 13px;
-}
-
-.table-row {
-  display: flex;
-  align-items: center;
-  padding: 12px 20px;
-  border-bottom: 1px solid #f5f5f5;
-  transition: background 0.15s;
-}
-
-.table-row:hover {
-  background: #fafbfc;
-}
-
-.table-row.running {
-  background: #f0f9ff;
-}
-
-/* 封面列 */
-.col-cover {
-  width: 60px;
-  height: 34px;
-  flex-shrink: 0;
-  margin-right: 12px;
-  position: relative;
-  overflow: hidden;
-  border-radius: 4px;
-  background: #f5f5f5;
-}
-
-.cover-video {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  background: #000;
-}
-
-.cover-placeholder-small {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #f8f9fa;
-  color: #cbd5e1;
-}
-
-/* 名称列 */
-.col-name {
-  flex: 1;
-  min-width: 0;
-  padding-right: 16px;
-}
-
-.task-title {
-  display: block;
-  font-size: 14px;
-  font-weight: 500;
-  color: #1a1a2e;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.task-url {
-  display: block;
-  font-size: 11px;
-  color: #94a3b8;
-  font-family: monospace;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  margin-top: 2px;
-}
-
-.task-progress-info {
-  margin-top: 4px;
-  display: flex;
-  gap: 12px;
-  font-size: 11px;
-}
-
-.progress-percent {
-  color: #16a34a;
-  font-weight: 600;
-}
-
-.progress-speed {
-  color: #64748b;
-}
-
-.task-file-info {
-  margin-top: 4px;
-}
-
-.file-path {
-  font-size: 11px;
-  color: #64748b;
-  font-family: monospace;
-  background: #f8f9fa;
-  padding: 2px 6px;
-  border-radius: 4px;
-}
-
-.task-error-info {
-  margin-top: 4px;
-}
-
-.error-message {
-  font-size: 11px;
-  color: #dc2626;
-}
-
-/* 状态列 */
-.col-status {
-  width: 120px;
-  padding-right: 16px;
-}
-
-.task-progress {
-  width: 100%;
-}
-
-.progress-bar {
-  height: 6px;
-  background: #e5e7eb;
-  border-radius: 3px;
-  overflow: hidden;
-}
-
-.progress-fill {
-  height: 100%;
-  background: linear-gradient(90deg, #22c55e, #16a34a);
-  border-radius: 3px;
-  transition: width 0.3s ease;
-}
-
-.status-tag {
-  display: inline-block;
-  padding: 4px 10px;
-  border-radius: 12px;
-  font-size: 11px;
-  font-weight: 500;
-}
-
-.status-pending { background: #fef3c7; color: #d97706; }
-.status-queued { background: #dbeafe; color: #2563eb; }
-.status-downloading { background: #dcfce7; color: #16a34a; }
-.status-paused { background: #fef3c7; color: #d97706; }
-.status-completed { background: #dcfce7; color: #16a34a; }
-.status-failed { background: #fee2e2; color: #dc2626; }
-.status-cancelled { background: #f3f4f6; color: #6b7280; }
-
-/* 失败状态和错误提示 */
-.status-error {
-  position: relative;
-  display: inline-block;
-}
-
-.error-tooltip {
-  visibility: hidden;
-  position: absolute;
-  bottom: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  background: #1e293b;
-  color: #fee2e2;
-  padding: 8px 12px;
-  border-radius: 6px;
-  font-size: 11px;
-  white-space: nowrap;
-  max-width: 300px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  z-index: 100;
-  margin-bottom: 4px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-}
-
-.status-error:hover .error-tooltip {
-  visibility: visible;
-}
-
-/* 操作列 */
-.col-action {
-  width: 120px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-}
-
-.action-btn {
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.action-btn.stop {
-  background: #fee2e2;
-  color: #dc2626;
-}
-
-.action-btn.stop:hover {
-  background: #fecaca;
-}
-
-.action-btn.start {
-  background: #dcfce7;
-  color: #16a34a;
-}
-
-.action-btn.start:hover {
-  background: #bbf7d0;
-}
-
-.action-btn.play {
-  background: #fef3c7;
-  color: #d97706;
-}
-
-.action-btn.play:hover {
-  background: #c7d2fe;
-}
-
-.action-btn.folder {
-  background: #f3f4f6;
-  color: #6b7280;
-}
-
-.action-btn.folder:hover {
-  background: #e5e7eb;
-  color: #374151;
-}
-
-.action-btn.cast {
-  background: #fef3c7;
-  color: #d97706;
-}
-
-.action-btn.cast:hover {
-  background: #fde68a;
-}
-
-.action-btn.delete {
-  background: #f3f4f6;
-  color: #6b7280;
-}
-
-.action-btn.delete:hover {
-  background: #fee2e2;
-  color: #dc2626;
-}
-
 </style>

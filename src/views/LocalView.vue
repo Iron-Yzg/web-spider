@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { invoke, convertFileSrc } from '@tauri-apps/api/core'
+import { invoke } from '@tauri-apps/api/core'
 import type { LocalVideo } from '../types'
 import VideoPlayer from '../components/VideoPlayer.vue'
 import DlnaCastDialog from '../components/DlnaCastDialog.vue'
+import IconButton from '../components/IconButton.vue'
 import { getLocalVideos, addLocalVideo, deleteLocalVideo as deleteLocalVideoApi } from '../services/api'
 
 const videos = ref<LocalVideo[]>([])
@@ -297,10 +298,9 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="local-page">
-    <!-- 顶部工具栏 -->
-    <div class="toolbar">
-      <button @click="selectVideos" :disabled="isLoading" class="add-btn">
+  <div class="h-full flex flex-col bg-white rounded-xl shadow-[0_2px_12px_rgba(0,0,0,0.06)] overflow-hidden">
+    <div class="flex items-center gap-4 px-5 py-4 border-b border-[#f0f0f0] shrink-0">
+      <button @click="selectVideos" :disabled="isLoading" class="flex items-center gap-2 px-5 py-2.5 border-none rounded-lg text-sm font-medium text-white cursor-pointer transition-all bg-[linear-gradient(135deg,#667eea_0%,#764ba2_100%)] hover:-translate-y-0.5 hover:shadow-[0_4px_12px_rgba(102,126,234,0.35)] disabled:opacity-60 disabled:cursor-not-allowed">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
           <polyline points="17 8 12 3 7 8"></polyline>
@@ -309,26 +309,20 @@ onMounted(async () => {
         {{ isLoading ? '加载中...' : '添加视频' }}
       </button>
 
-      <div class="search-box">
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <div class="flex items-center gap-2 px-3.5 py-2 bg-[#f5f6f8] rounded-lg flex-1 max-w-[400px]">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-[#94a3b8] shrink-0">
           <circle cx="11" cy="11" r="8"></circle>
           <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
         </svg>
-        <input
-          type="text"
-          v-model="searchQuery"
-          @input="handleSearch"
-          placeholder="搜索视频名称"
-        />
+        <input type="text" v-model="searchQuery" @input="handleSearch" placeholder="搜索视频名称" class="flex-1 border-none bg-transparent text-sm outline-none text-[#1a1a2e] placeholder:text-[#94a3b8]" />
       </div>
 
-      <span class="video-count">共 {{ filteredVideos.length }} 个视频</span>
+      <span class="text-[13px] text-[#64748b] whitespace-nowrap">共 {{ filteredVideos.length }} 个视频</span>
     </div>
 
-    <!-- 视频列表 -->
-    <div class="video-section">
-      <div v-if="filteredVideos.length === 0 && !isLoading" class="empty-tip">
-        <div class="empty-icon">
+    <div class="flex-1 flex flex-col overflow-hidden">
+      <div v-if="filteredVideos.length === 0 && !isLoading" class="flex-1 flex flex-col items-center justify-center p-10 text-[#94a3b8]">
+        <div class="mb-4 text-[#cbd5e1]">
           <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
             <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect>
             <line x1="7" y1="2" x2="7" y2="22"></line>
@@ -337,447 +331,63 @@ onMounted(async () => {
             <line x1="12" y1="2" x2="12" y2="22"></line>
           </svg>
         </div>
-        <p>暂无本地视频</p>
-        <p class="empty-hint">点击"添加视频"按钮选择本地视频文件</p>
+        <p class="text-sm">暂无本地视频</p>
+        <p class="mt-2 text-xs text-[#cbd5e1]">点击"添加视频"按钮选择本地视频文件</p>
       </div>
 
-      <div v-else class="video-table">
-        <div class="table-header">
-          <span class="col-thumbnail">封面</span>
-          <span class="col-name">名称</span>
-          <span class="col-size">大小</span>
-          <span class="col-duration">时长</span>
-          <span class="col-resolution">分辨率</span>
-          <span class="col-added">添加时间</span>
-          <span class="col-action">操作</span>
+      <div v-else class="flex-1 flex flex-col overflow-hidden">
+        <div class="flex px-5 py-2.5 bg-[#f8f9fa] border-b border-[#eee] text-xs font-semibold text-[#64748b] uppercase tracking-[0.5px] items-center">
+          <span class="w-[60px] h-[34px] shrink-0 mr-3">封面</span>
+          <span class="flex-1 min-w-0 pr-4">名称</span>
+          <span class="w-[60px] text-[13px] normal-case">大小</span>
+          <span class="w-[60px] text-[13px] normal-case">时长</span>
+          <span class="w-[80px] text-[13px] normal-case">分辨率</span>
+          <span class="w-[80px] text-[13px] normal-case">添加时间</span>
+          <span class="w-[110px] text-[13px] normal-case">操作</span>
         </div>
 
-        <div class="table-body">
-          <div v-for="video in filteredVideos" :key="video.id" class="table-row">
-            <div class="col-thumbnail">
-              <div class="video-thumbnail" @click="playVideo(video)">
-                <svg class="play-icon" viewBox="0 0 24 24" fill="currentColor">
-                  <polygon points="5 3 19 12 5 21 5 3"></polygon>
-                </svg>
+        <div class="flex-1 overflow-y-auto">
+          <div v-for="video in filteredVideos" :key="video.id" class="flex items-center px-5 py-3 border-b border-[#f5f5f5] transition-colors hover:bg-[#fafbfc]">
+            <div class="w-[60px] h-[34px] mr-3 relative overflow-hidden rounded bg-[#f5f5f5] shrink-0">
+              <div class="w-full h-full flex items-center justify-center rounded bg-[linear-gradient(135deg,#1a1a2e_0%,#16213e_100%)] cursor-pointer transition-all hover:opacity-90" @click="playVideo(video)">
+                <svg class="w-5 h-5 text-white/80" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
               </div>
             </div>
-            <div class="col-name">
-              <span class="video-name" :title="video.name">{{ video.name }}</span>
-              <span class="video-path" :title="video.file_path">{{ video.file_path }}</span>
+            <div class="flex-1 min-w-0 pr-4">
+              <span class="block text-sm font-medium text-[#1a1a2e] whitespace-nowrap overflow-hidden text-ellipsis" :title="video.name">{{ video.name }}</span>
+              <span class="block mt-0.5 text-[11px] text-[#94a3b8] font-mono whitespace-nowrap overflow-hidden text-ellipsis" :title="video.file_path">{{ video.file_path }}</span>
             </div>
-            <div class="col-size">{{ video.file_size }}</div>
-            <div class="col-duration">{{ video.duration }}</div>
-            <div class="col-resolution">{{ video.resolution }}</div>
-            <div class="col-added">{{ video.added_at.split('T')[0] }}</div>
-            <div class="col-action">
-              <button @click="playVideo(video)" class="action-btn play" title="播放">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none">
-                  <polygon points="5 3 19 12 5 21 5 3"></polygon>
-                </svg>
-              </button>
-              <button @click="openDlnaDialog(video)" class="action-btn cast" title="投屏">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <rect x="2" y="7" width="20" height="15" rx="2" ry="2"></rect>
-                  <polyline points="17 2 12 7 7 2"></polyline>
-                </svg>
-              </button>
-              <button @click="deleteVideo(video.id)" class="action-btn delete" title="删除">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <polyline points="3 6 5 6 21 6"></polyline>
-                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                </svg>
-              </button>
+            <div class="w-[60px] text-[13px] text-[#64748b] shrink-0">{{ video.file_size }}</div>
+            <div class="w-[60px] text-[13px] text-[#64748b] shrink-0">{{ video.duration }}</div>
+            <div class="w-[80px] text-[13px] text-[#64748b] shrink-0">{{ video.resolution }}</div>
+            <div class="w-[80px] text-[13px] text-[#64748b] shrink-0">{{ video.added_at.split('T')[0] }}</div>
+            <div class="w-[110px] flex items-center gap-1 shrink-0">
+              <IconButton variant="play" title="播放" @click="playVideo(video)" />
+              <IconButton variant="cast" title="投屏" @click="openDlnaDialog(video)" />
+              <IconButton variant="delete" title="删除" @click="deleteVideo(video.id)" />
             </div>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- 确认对话框 -->
     <Teleport to="body">
-      <div v-if="selectDialog.visible" class="confirm-overlay" @click="handleCancel">
-        <div class="confirm-dialog" @click.stop>
-          <div class="confirm-content">{{ selectDialog.message }}</div>
-          <div class="confirm-actions">
-            <button class="confirm-btn cancel" @click="handleCancel">取消</button>
-            <button class="confirm-btn ok" @click="handleConfirm">确定</button>
+      <div v-if="selectDialog.visible" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000]" @click="handleCancel">
+        <div class="bg-white rounded-xl p-6 min-w-[300px] shadow-[0_4px_20px_rgba(0,0,0,0.15)]" @click.stop>
+          <div class="text-[15px] text-[#1a1a2e] mb-5 text-center">{{ selectDialog.message }}</div>
+          <div class="flex gap-3 justify-center">
+            <button class="px-6 py-2 border-none rounded-lg text-sm font-medium cursor-pointer transition-all bg-[#f1f5f9] text-[#64748b] hover:bg-[#e2e8f0]" @click="handleCancel">取消</button>
+            <button class="px-6 py-2 border-none rounded-lg text-sm font-medium cursor-pointer transition-all bg-[#4f46e5] text-white hover:bg-[#4338ca]" @click="handleConfirm">确定</button>
           </div>
         </div>
       </div>
     </Teleport>
 
-    <!-- 视频播放器 -->
-    <VideoPlayer
-      :visible="playerVisible"
-      :src="playerSrc"
-      :title="playerTitle"
-      :playlist="playerPlaylist"
-      :current-index="currentVideoIndex"
-      video-id=""
-      @close="handlePlayerClose"
-      @play-next="handlePlayNext"
-      @delete-current="handleDeleteCurrent"
-    />
+    <VideoPlayer :visible="playerVisible" :src="playerSrc" :title="playerTitle" :playlist="playerPlaylist" :current-index="currentVideoIndex" video-id="" @close="handlePlayerClose" @play-next="handlePlayNext" @delete-current="handleDeleteCurrent" />
 
-    <!-- DLNA 投屏弹窗 -->
-    <DlnaCastDialog
-      v-if="dlnaVideo"
-      :video="dlnaVideo"
-      @close="closeDlnaDialog"
-    />
+    <DlnaCastDialog v-if="dlnaVideo" :video="dlnaVideo" @close="closeDlnaDialog" />
   </div>
 </template>
 
 <style scoped>
-.local-page {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
-  overflow: hidden;
-}
-
-/* 工具栏 */
-.toolbar {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 16px 20px;
-  border-bottom: 1px solid #f0f0f0;
-  flex-shrink: 0;
-}
-
-.add-btn {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 20px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  border: none;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.add-btn:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.35);
-}
-
-.add-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.search-box {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 14px;
-  background: #f5f6f8;
-  border-radius: 8px;
-  flex: 1;
-  max-width: 400px;
-}
-
-.search-box svg {
-  color: #94a3b8;
-  flex-shrink: 0;
-}
-
-.search-box input {
-  flex: 1;
-  border: none;
-  background: transparent;
-  font-size: 14px;
-  outline: none;
-  color: #1a1a2e;
-}
-
-.search-box input::placeholder {
-  color: #94a3b8;
-}
-
-.video-count {
-  font-size: 13px;
-  color: #64748b;
-  white-space: nowrap;
-}
-
-/* 视频区域 */
-.video-section {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.empty-tip {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 40px;
-  color: #94a3b8;
-}
-
-.empty-icon {
-  margin-bottom: 16px;
-  color: #cbd5e1;
-}
-
-.empty-tip p {
-  margin: 0;
-  font-size: 14px;
-}
-
-.empty-hint {
-  margin-top: 8px !important;
-  font-size: 12px !important;
-  color: #cbd5e1;
-}
-
-/* 表格 */
-.video-table {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.table-header {
-  display: flex;
-  padding: 10px 20px;
-  background: #f8f9fa;
-  border-bottom: 1px solid #eee;
-  font-size: 12px;
-  font-weight: 600;
-  color: #64748b;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  align-items: center;
-}
-
-.table-body {
-  flex: 1;
-  overflow-y: auto;
-}
-
-.table-row {
-  display: flex;
-  align-items: center;
-  padding: 12px 20px;
-  border-bottom: 1px solid #f5f5f5;
-  transition: background 0.15s;
-}
-
-.table-row:hover {
-  background: #fafbfc;
-}
-
-.col-thumbnail {
-  width: 60px;
-  height: 34px;
-  flex-shrink: 0;
-  margin-right: 12px;
-  position: relative;
-  overflow: hidden;
-  border-radius: 4px;
-  background: #f5f5f5;
-}
-
-.video-thumbnail {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-  border-radius: 4px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.video-thumbnail:hover {
-  opacity: 0.9;
-  background: linear-gradient(135deg, #16213e 0%, #1a1a2e 100%);
-}
-
-.video-thumbnail .play-icon {
-  width: 20px;
-  height: 20px;
-  color: rgba(255, 255, 255, 0.8);
-}
-
-.col-name {
-  flex: 1;
-  min-width: 0;
-  padding-right: 16px;
-}
-
-.video-name {
-  display: block;
-  font-size: 14px;
-  font-weight: 500;
-  color: #1a1a2e;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.video-path {
-  display: block;
-  font-size: 11px;
-  color: #94a3b8;
-  font-family: monospace;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  margin-top: 2px;
-}
-
-.col-size {
-  width: 60px;
-  font-size: 13px;
-  color: #64748b;
-  flex-shrink: 0;
-}
-
-.col-duration {
-  width: 60px;
-  font-size: 13px;
-  color: #64748b;
-  flex-shrink: 0;
-}
-
-.col-resolution {
-  width: 80px;
-  font-size: 13px;
-  color: #64748b;
-  flex-shrink: 0;
-}
-
-.col-added {
-  width: 80px;
-  font-size: 13px;
-  color: #64748b;
-  flex-shrink: 0;
-}
-
-.col-action {
-  width: 110px;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-}
-
-.action-btn {
-  padding: 5px 6px;
-  border: none;
-  border-radius: 4px;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.action-btn.play {
-  background: #fef3c7;
-  color: #d97706;
-}
-
-.action-btn.play:hover {
-  background: #fde68a;
-}
-
-.action-btn.cast {
-  background: #e0e7ff;
-  color: #4f46e5;
-}
-
-.action-btn.cast:hover {
-  background: #c7d2fe;
-}
-
-.action-btn.delete {
-  background: #fee2e2;
-  color: #dc2626;
-}
-
-.action-btn.delete:hover {
-  background: #fecaca;
-}
-
-/* 确认对话框 */
-.confirm-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
-.confirm-dialog {
-  background: white;
-  border-radius: 12px;
-  padding: 24px;
-  min-width: 300px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-}
-
-.confirm-content {
-  font-size: 15px;
-  color: #1a1a2e;
-  margin-bottom: 20px;
-  text-align: center;
-}
-
-.confirm-actions {
-  display: flex;
-  gap: 12px;
-  justify-content: center;
-}
-
-.confirm-btn {
-  padding: 8px 24px;
-  border: none;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.confirm-btn.cancel {
-  background: #f1f5f9;
-  color: #64748b;
-}
-
-.confirm-btn.cancel:hover {
-  background: #e2e8f0;
-}
-
-.confirm-btn.ok {
-  background: #4f46e5;
-  color: white;
-}
-
-.confirm-btn.ok:hover {
-  background: #4338ca;
-}
 </style>

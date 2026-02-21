@@ -296,24 +296,37 @@ async function saveYtdlpConfig() {
 </script>
 
 <template>
-  <div class="settings-page">
+  <div class="flex h-full overflow-hidden rounded-xl bg-[#f5f6f8]">
     <!-- 保存消息提示 -->
     <Transition name="fade">
-      <div v-if="saveMessage" :class="['save-message', saveMessage.type]">
+      <div
+        v-if="saveMessage"
+        :class="[
+          'fixed left-1/2 top-[70px] z-[1000] -translate-x-1/2 rounded-lg px-6 py-2.5 text-sm font-medium shadow-[0_4px_12px_rgba(0,0,0,0.15)]',
+          saveMessage.type === 'success'
+            ? 'border border-[#bbf7d0] bg-[#f0fdf4] text-[#166534]'
+            : 'border border-[#fecaca] bg-[#fef2f2] text-[#991b1b]'
+        ]"
+      >
         {{ saveMessage.text }}
       </div>
     </Transition>
 
     <!-- 左侧导航 -->
-    <aside class="settings-nav">
-      <div class="nav-header">
-        <h2>设置</h2>
+    <aside class="w-40 shrink-0 border-r border-[#e5e7eb] bg-white">
+      <div class="border-b border-[#e5e7eb] px-3 py-4">
+        <h2 class="m-0 text-base font-semibold text-[#1a1a2e]">设置</h2>
       </div>
-      <nav class="nav-list">
+      <nav class="p-2">
         <button
           v-for="item in navItems"
           :key="item.id"
-          :class="['nav-item', { active: activeSection === item.id }]"
+          :class="[
+            'block w-full rounded-md border-none bg-transparent px-3 py-2.5 text-left text-sm transition-all',
+            activeSection === item.id
+              ? 'bg-[#eef2ff] font-medium text-[#667eea]'
+              : 'text-[#64748b] hover:bg-[#f5f6f8] hover:text-[#1a1a2e]'
+          ]"
           @click="activeSection = item.id"
         >
           {{ item.label }}
@@ -322,24 +335,27 @@ async function saveYtdlpConfig() {
     </aside>
 
     <!-- 右侧内容 -->
-    <main class="settings-content">
-      <div v-if="isLoading" class="loading">
-        <div class="spinner"></div>
+    <main class="flex-1 overflow-y-auto px-[30px] py-5">
+      <div v-if="isLoading" class="flex h-full flex-col items-center justify-center text-[#94a3b8]">
+        <div class="h-8 w-8 animate-spin rounded-full border-[3px] border-[#e5e7eb] border-t-[#667eea]"></div>
         <p>加载中...</p>
       </div>
 
       <template v-else>
         <!-- 网站设置 -->
-        <div v-if="activeSection === 'websites'" class="section">
-          <div class="section-header">
-            <h3>网站设置</h3>
-            <p>管理用于爬取视频的网站配置</p>
+        <div v-if="activeSection === 'websites'" class="w-full max-w-none">
+          <div class="mb-4">
+            <h3 class="mb-1 mt-0 text-lg font-semibold text-[#1a1a2e]">网站设置</h3>
+            <p class="m-0 text-[13px] text-[#94a3b8]">管理用于爬取视频的网站配置</p>
           </div>
 
-          <div v-if="!showWebsiteForm" class="content-wrapper">
-            <div class="section-toolbar">
-              <h4>已配置网站</h4>
-              <button @click="openWebsiteForm()" class="add-btn">
+          <div v-if="!showWebsiteForm" class="box-border w-full rounded-[10px] border border-[#e5e7eb] bg-white p-4">
+            <div class="mb-4 flex items-center justify-between border-b border-[#f0f0f0] pb-3">
+              <h4 class="m-0 text-[15px] font-semibold text-[#1a1a2e]">已配置网站</h4>
+              <button
+                @click="openWebsiteForm()"
+                class="inline-flex items-center gap-1 rounded-md border-none bg-[#667eea] px-3 py-1.5 text-[13px] font-medium text-white transition-colors hover:bg-[#5a67d8]"
+              >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <line x1="12" y1="5" x2="12" y2="19"/>
                   <line x1="5" y1="12" x2="19" y2="12"/>
@@ -348,37 +364,54 @@ async function saveYtdlpConfig() {
               </button>
             </div>
 
-            <div v-if="websites.length === 0" class="empty-state">
+            <div v-if="websites.length === 0" class="px-5 py-10 text-center text-[#94a3b8]">
               <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                 <circle cx="12" cy="12" r="10"/>
                 <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10"/>
               </svg>
               <p>暂无配置网站</p>
-              <p class="hint">点击上方按钮添加第一个网站</p>
+              <p class="mt-2 text-xs">点击上方按钮添加第一个网站</p>
             </div>
 
-            <div v-else class="website-list">
-              <div v-for="website in websites" :key="website.id" class="website-item">
-                <div class="item-main">
-                  <div class="item-info">
-                    <span class="item-name">{{ website.name }}</span>
-                    <span v-if="website.is_default" class="default-badge">默认</span>
+            <div v-else class="flex flex-col gap-2">
+              <div
+                v-for="website in websites"
+                :key="website.id"
+                class="flex items-center justify-between rounded-lg border border-[#f0f0f0] bg-[#fafbfc] p-3 hover:border-[#e5e7eb]"
+              >
+                <div class="min-w-0 flex-1">
+                  <div class="mb-1 flex items-center gap-2">
+                    <span class="text-sm font-medium text-[#1a1a2e]">{{ website.name }}</span>
+                    <span v-if="website.is_default" class="rounded bg-[#eef2ff] px-2 py-0.5 text-[11px] font-medium text-[#667eea]">默认</span>
                   </div>
-                  <span class="item-url">{{ website.base_url }}</span>
+                  <span class="block overflow-hidden text-ellipsis whitespace-nowrap text-xs text-[#94a3b8]">{{ website.base_url }}</span>
                 </div>
-                <div class="item-actions">
-                  <button v-if="!website.is_default" @click.stop="setDefaultWebsite(website.id)" class="action-btn" title="设为默认">
+                <div class="ml-3 flex gap-1">
+                  <button
+                    v-if="!website.is_default"
+                    @click.stop="setDefaultWebsite(website.id)"
+                    class="flex h-7 w-7 items-center justify-center rounded-md border-none bg-transparent text-[#94a3b8] transition-all hover:bg-white hover:text-[#667eea]"
+                    title="设为默认"
+                  >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                       <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
                     </svg>
                   </button>
-                  <button @click.stop="openWebsiteForm(website)" class="action-btn" title="编辑">
+                  <button
+                    @click.stop="openWebsiteForm(website)"
+                    class="flex h-7 w-7 items-center justify-center rounded-md border-none bg-transparent text-[#94a3b8] transition-all hover:bg-white hover:text-[#667eea]"
+                    title="编辑"
+                  >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                       <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
                       <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
                     </svg>
                   </button>
-                  <button @click.stop="deleteWebsite(website.id)" class="action-btn delete" title="删除">
+                  <button
+                    @click.stop="deleteWebsite(website.id)"
+                    class="flex h-7 w-7 items-center justify-center rounded-md border-none bg-transparent text-[#94a3b8] transition-all hover:bg-[#fee2e2] hover:text-[#dc2626]"
+                    title="删除"
+                  >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                       <polyline points="3 6 5 6 21 6"/>
                       <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
@@ -390,65 +423,108 @@ async function saveYtdlpConfig() {
           </div>
 
           <!-- 网站表单 -->
-          <div v-else class="content-wrapper">
-            <div class="section-toolbar">
-              <button @click="closeWebsiteForm" class="back-btn">
+          <div v-else class="box-border w-full rounded-[10px] border border-[#e5e7eb] bg-white p-4">
+            <div class="mb-4 flex items-center justify-between border-b border-[#f0f0f0] pb-3">
+              <button
+                @click="closeWebsiteForm"
+                class="inline-flex items-center gap-1 rounded-md border-none bg-[#f5f6f8] px-3 py-1.5 text-[13px] text-[#64748b] transition-colors hover:bg-[#e5e7eb]"
+              >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <line x1="19" y1="12" x2="5" y2="12"/>
                   <polyline points="12 19 5 12 12 5"/>
                 </svg>
                 返回
               </button>
-              <h4>{{ editingWebsite ? '编辑网站' : '添加网站' }}</h4>
+              <h4 class="m-0 text-[15px] font-semibold text-[#1a1a2e]">{{ editingWebsite ? '编辑网站' : '添加网站' }}</h4>
             </div>
 
-            <div class="form-stack">
-              <div class="form-group">
-                <label>网站名称</label>
-                <input type="text" v-model="websiteForm.name" placeholder="例如: 网站A" class="form-input" />
+            <div class="flex flex-col gap-4">
+              <div class="flex flex-col gap-1.5">
+                <label class="text-[13px] font-medium text-[#374151]">网站名称</label>
+                <input
+                  type="text"
+                  v-model="websiteForm.name"
+                  placeholder="例如: 网站A"
+                  class="rounded-md border border-[#e5e7eb] px-3 py-2.5 text-sm text-[#1a1a2e] transition-all focus:border-[#667eea] focus:outline-none focus:shadow-[0_0_0_3px_rgba(102,126,234,0.1)]"
+                />
               </div>
 
-              <div class="form-group">
-                <label>网站地址</label>
-                <input type="text" v-model="websiteForm.base_url" placeholder="例如: https://example.com/" class="form-input" />
+              <div class="flex flex-col gap-1.5">
+                <label class="text-[13px] font-medium text-[#374151]">网站地址</label>
+                <input
+                  type="text"
+                  v-model="websiteForm.base_url"
+                  placeholder="例如: https://example.com/"
+                  class="rounded-md border border-[#e5e7eb] px-3 py-2.5 text-sm text-[#1a1a2e] transition-all focus:border-[#667eea] focus:outline-none focus:shadow-[0_0_0_3px_rgba(102,126,234,0.1)]"
+                />
               </div>
 
-              <div class="form-group">
-                <label>爬虫</label>
-                <select v-model="websiteForm.spider" class="form-input">
+              <div class="flex flex-col gap-1.5">
+                <label class="text-[13px] font-medium text-[#374151]">爬虫</label>
+                <select
+                  v-model="websiteForm.spider"
+                  class="cursor-pointer rounded-md border border-[#e5e7eb] px-3 py-2.5 text-sm text-[#1a1a2e] transition-all hover:border-[#d1d5db] focus:border-[#667eea] focus:outline-none focus:shadow-[0_0_0_3px_rgba(102,126,234,0.1)]"
+                >
                   <option v-for="scraper in scrapers" :key="scraper.id" :value="scraper.id">
                     {{ scraper.name }}
                   </option>
                 </select>
               </div>
 
-              <div class="form-group">
-                <label>LocalStorage 配置</label>
-                <div class="add-storage-form">
-                  <input type="text" v-model="newStorageKey" placeholder="Key" class="storage-input" />
-                  <input type="text" v-model="newStorageValue" placeholder="Value" class="storage-input" />
-                  <button @click="addStorageItem" class="add-btn-small">添加</button>
+              <div class="flex flex-col gap-1.5">
+                <label class="text-[13px] font-medium text-[#374151]">LocalStorage 配置</label>
+                <div class="mb-3 flex gap-2">
+                  <input
+                    type="text"
+                    v-model="newStorageKey"
+                    placeholder="Key"
+                    class="flex-1 rounded-md border border-[#e5e7eb] px-3 py-2 text-[13px] focus:border-[#667eea] focus:outline-none"
+                  />
+                  <input
+                    type="text"
+                    v-model="newStorageValue"
+                    placeholder="Value"
+                    class="flex-1 rounded-md border border-[#e5e7eb] px-3 py-2 text-[13px] focus:border-[#667eea] focus:outline-none"
+                  />
+                  <button
+                    @click="addStorageItem"
+                    class="rounded-md border border-[#e5e7eb] bg-[#f5f6f8] px-3.5 py-2 text-[13px] text-[#64748b] transition-all hover:border-[#667eea] hover:bg-[#667eea] hover:text-white"
+                  >添加</button>
                 </div>
 
-                <div v-if="websiteForm.local_storage.length > 0" class="storage-table">
-                  <div class="table-row header">
-                    <span class="col-key">Key</span>
-                    <span class="col-value">Value</span>
-                    <span class="col-action"></span>
+                <div v-if="websiteForm.local_storage.length > 0" class="overflow-hidden rounded-md border border-[#f0f0f0]">
+                  <div class="flex items-center border-b border-[#f5f5f5] bg-[#fafbfc] px-3 py-2.5 text-xs font-semibold text-[#64748b]">
+                    <span class="w-[100px] overflow-hidden text-ellipsis whitespace-nowrap text-[13px] text-[#1a1a2e]">Key</span>
+                    <span class="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-xs text-[#64748b]">Value</span>
+                    <span class="flex w-8 justify-center"></span>
                   </div>
-                  <div class="table-row" v-for="(item, index) in websiteForm.local_storage" :key="index">
-                    <span class="col-key">{{ item.key }}</span>
-                    <span class="col-value">{{ item.value }}</span>
-                    <span class="col-action">
-                      <button @click="removeStorageItem(index)" class="delete-btn">&times;</button>
+                  <div
+                    v-for="(item, index) in websiteForm.local_storage"
+                    :key="index"
+                    class="flex items-center border-b border-[#f5f5f5] px-3 py-2.5 last:border-b-0"
+                  >
+                    <span class="w-[100px] overflow-hidden text-ellipsis whitespace-nowrap text-[13px] text-[#1a1a2e]">{{ item.key }}</span>
+                    <span class="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-xs text-[#64748b]">{{ item.value }}</span>
+                    <span class="flex w-8 justify-center">
+                      <button
+                        @click="removeStorageItem(index)"
+                        class="flex h-6 w-6 items-center justify-center rounded text-base text-[#94a3b8] transition-all hover:bg-[#fee2e2] hover:text-[#dc2626]"
+                      >&times;</button>
                     </span>
                   </div>
                 </div>
               </div>
 
-              <div class="form-actions">
-                <button @click="closeWebsiteForm" class="btn-secondary">取消</button>
-                <button @click="saveWebsite" :disabled="isSaving" class="btn-primary">
+              <div class="flex justify-end gap-3 border-t border-[#f0f0f0] pt-3">
+                <button
+                  @click="closeWebsiteForm"
+                  class="rounded-md border border-[#e5e7eb] bg-[#f5f6f8] px-4 py-2.5 text-sm text-[#64748b] transition-all hover:bg-[#e5e7eb] hover:text-[#1a1a2e]"
+                >取消</button>
+                <button
+                  @click="saveWebsite"
+                  :disabled="isSaving"
+                  class="rounded-md border-none bg-[#667eea] px-5 py-2.5 text-sm font-medium text-white transition-all hover:bg-[#5a67d8] disabled:cursor-not-allowed disabled:opacity-60"
+                >
                   {{ isSaving ? '保存中...' : '保存' }}
                 </button>
               </div>
@@ -457,24 +533,36 @@ async function saveYtdlpConfig() {
         </div>
 
         <!-- 下载设置 -->
-        <div v-if="activeSection === 'download'" class="section">
-          <div class="section-header">
-            <h3>下载设置</h3>
-            <p>配置 M3U8 视频下载相关的选项</p>
+        <div v-if="activeSection === 'download'" class="w-full max-w-none">
+          <div class="mb-4">
+            <h3 class="mb-1 mt-0 text-lg font-semibold text-[#1a1a2e]">下载设置</h3>
+            <p class="m-0 text-[13px] text-[#94a3b8]">配置 M3U8 视频下载相关的选项</p>
           </div>
 
-          <div class="content-wrapper">
-            <div class="form-stack">
-              <div class="form-group">
-                <label>下载目录</label>
-                <div class="input-with-btn">
-                  <input type="text" v-model="config.download_path" placeholder="输入下载目录路径" class="form-input" />
-                  <button @click="selectDownloadPath" class="btn-secondary">选择</button>
+          <div class="box-border w-full rounded-[10px] border border-[#e5e7eb] bg-white p-4">
+            <div class="flex flex-col gap-4">
+              <div class="flex flex-col gap-1.5">
+                <label class="text-[13px] font-medium text-[#374151]">下载目录</label>
+                <div class="flex gap-2">
+                  <input
+                    type="text"
+                    v-model="config.download_path"
+                    placeholder="输入下载目录路径"
+                    class="flex-1 rounded-md border border-[#e5e7eb] px-3 py-2.5 text-sm text-[#1a1a2e] transition-all focus:border-[#667eea] focus:outline-none focus:shadow-[0_0_0_3px_rgba(102,126,234,0.1)]"
+                  />
+                  <button
+                    @click="selectDownloadPath"
+                    class="rounded-md border border-[#e5e7eb] bg-[#f5f6f8] px-4 py-2.5 text-sm text-[#64748b] transition-all hover:bg-[#e5e7eb] hover:text-[#1a1a2e]"
+                  >选择</button>
                 </div>
               </div>
 
-              <div class="form-actions">
-                <button @click="saveDownloadConfig" :disabled="isSaving" class="btn-primary">
+              <div class="flex justify-end gap-3 border-t border-[#f0f0f0] pt-3">
+                <button
+                  @click="saveDownloadConfig"
+                  :disabled="isSaving"
+                  class="rounded-md border-none bg-[#667eea] px-5 py-2.5 text-sm font-medium text-white transition-all hover:bg-[#5a67d8] disabled:cursor-not-allowed disabled:opacity-60"
+                >
                   {{ isSaving ? '保存中...' : '保存配置' }}
                 </button>
               </div>
@@ -483,18 +571,21 @@ async function saveYtdlpConfig() {
         </div>
 
         <!-- yt-dlp 设置 -->
-        <div v-if="activeSection === 'ytdlp'" class="section">
-          <div class="section-header">
-            <h3>yt-dlp 设置</h3>
-            <p>配置 YouTube、B站等平台视频下载的默认选项</p>
+        <div v-if="activeSection === 'ytdlp'" class="w-full max-w-none">
+          <div class="mb-4">
+            <h3 class="mb-1 mt-0 text-lg font-semibold text-[#1a1a2e]">yt-dlp 设置</h3>
+            <p class="m-0 text-[13px] text-[#94a3b8]">配置 YouTube、B站等平台视频下载的默认选项</p>
           </div>
 
-          <div class="content-wrapper">
-            <div class="form-stack">
-              <div class="form-row">
-                <div class="form-group">
-                  <label>视频质量</label>
-                  <select v-model="ytdlpConfig.quality" class="form-input">
+          <div class="box-border w-full rounded-[10px] border border-[#e5e7eb] bg-white p-4">
+            <div class="flex flex-col gap-4">
+              <div class="grid grid-cols-2 gap-4 max-[600px]:grid-cols-1">
+                <div class="flex flex-col gap-1.5">
+                  <label class="text-[13px] font-medium text-[#374151]">视频质量</label>
+                  <select
+                    v-model="ytdlpConfig.quality"
+                    class="cursor-pointer rounded-md border border-[#e5e7eb] px-3 py-2.5 text-sm text-[#1a1a2e] transition-all hover:border-[#d1d5db] focus:border-[#667eea] focus:outline-none focus:shadow-[0_0_0_3px_rgba(102,126,234,0.1)]"
+                  >
                     <option :value="720">最佳质量</option>
                     <option :value="2160">4K (2160p)</option>
                     <option :value="1080">1080p 高清</option>
@@ -504,18 +595,24 @@ async function saveYtdlpConfig() {
                   </select>
                 </div>
 
-                <div class="form-group">
-                  <label>视频格式</label>
-                  <select v-model="ytdlpConfig.format" class="form-input">
+                <div class="flex flex-col gap-1.5">
+                  <label class="text-[13px] font-medium text-[#374151]">视频格式</label>
+                  <select
+                    v-model="ytdlpConfig.format"
+                    class="cursor-pointer rounded-md border border-[#e5e7eb] px-3 py-2.5 text-sm text-[#1a1a2e] transition-all hover:border-[#d1d5db] focus:border-[#667eea] focus:outline-none focus:shadow-[0_0_0_3px_rgba(102,126,234,0.1)]"
+                  >
                     <option value="mp4">MP4</option>
                     <option value="webm">WebM</option>
                     <option value="mkv">MKV</option>
                   </select>
                 </div>
 
-                <div class="form-group">
-                  <label>音频格式</label>
-                  <select v-model="ytdlpConfig.audio_format" class="form-input">
+                <div class="flex flex-col gap-1.5">
+                  <label class="text-[13px] font-medium text-[#374151]">音频格式</label>
+                  <select
+                    v-model="ytdlpConfig.audio_format"
+                    class="cursor-pointer rounded-md border border-[#e5e7eb] px-3 py-2.5 text-sm text-[#1a1a2e] transition-all hover:border-[#d1d5db] focus:border-[#667eea] focus:outline-none focus:shadow-[0_0_0_3px_rgba(102,126,234,0.1)]"
+                  >
                     <option value="mp3">MP3</option>
                     <option value="m4a">M4A</option>
                     <option value="wav">WAV</option>
@@ -523,49 +620,69 @@ async function saveYtdlpConfig() {
                   </select>
                 </div>
 
-                <div class="form-group">
-                  <label>并发下载数</label>
-                  <input type="number" v-model="ytdlpConfig.concurrent_downloads" min="1" max="5" class="form-input" />
+                <div class="flex flex-col gap-1.5">
+                  <label class="text-[13px] font-medium text-[#374151]">并发下载数</label>
+                  <input
+                    type="number"
+                    v-model="ytdlpConfig.concurrent_downloads"
+                    min="1"
+                    max="5"
+                    class="rounded-md border border-[#e5e7eb] px-3 py-2.5 text-sm text-[#1a1a2e] transition-all focus:border-[#667eea] focus:outline-none focus:shadow-[0_0_0_3px_rgba(102,126,234,0.1)]"
+                  />
                 </div>
               </div>
 
-              <div class="form-divider"></div>
+              <div class="my-1 h-px bg-[#f0f0f0]"></div>
 
-              <div class="form-group-inline">
-                <label class="checkbox-label">
-                  <input type="checkbox" v-model="ytdlpConfig.audio_only" />
+              <div class="flex flex-wrap gap-4">
+                <label class="flex cursor-pointer items-center gap-2 text-sm text-[#374151]">
+                  <input type="checkbox" v-model="ytdlpConfig.audio_only" class="h-4 w-4 accent-[#667eea]" />
                   <span>仅下载音频</span>
                 </label>
 
-                <label class="checkbox-label">
-                  <input type="checkbox" v-model="ytdlpConfig.merge_video" />
+                <label class="flex cursor-pointer items-center gap-2 text-sm text-[#374151]">
+                  <input type="checkbox" v-model="ytdlpConfig.merge_video" class="h-4 w-4 accent-[#667eea]" />
                   <span>合并视频流</span>
                 </label>
 
-                <label class="checkbox-label">
-                  <input type="checkbox" v-model="ytdlpConfig.subtitles" />
+                <label class="flex cursor-pointer items-center gap-2 text-sm text-[#374151]">
+                  <input type="checkbox" v-model="ytdlpConfig.subtitles" class="h-4 w-4 accent-[#667eea]" />
                   <span>下载字幕</span>
                 </label>
 
-                <label class="checkbox-label">
-                  <input type="checkbox" v-model="ytdlpConfig.thumbnail" />
+                <label class="flex cursor-pointer items-center gap-2 text-sm text-[#374151]">
+                  <input type="checkbox" v-model="ytdlpConfig.thumbnail" class="h-4 w-4 accent-[#667eea]" />
                   <span>下载封面</span>
                 </label>
               </div>
 
-              <div v-if="ytdlpConfig.subtitles" class="form-group">
-                <label>字幕语言</label>
-                <input type="text" v-model="ytdlpConfig.subtitle_langs" placeholder="zh-CN,zh-Hans,zh-Hant,en" class="form-input" />
+              <div v-if="ytdlpConfig.subtitles" class="flex flex-col gap-1.5">
+                <label class="text-[13px] font-medium text-[#374151]">字幕语言</label>
+                <input
+                  type="text"
+                  v-model="ytdlpConfig.subtitle_langs"
+                  placeholder="zh-CN,zh-Hans,zh-Hant,en"
+                  class="rounded-md border border-[#e5e7eb] px-3 py-2.5 text-sm text-[#1a1a2e] transition-all focus:border-[#667eea] focus:outline-none focus:shadow-[0_0_0_3px_rgba(102,126,234,0.1)]"
+                />
               </div>
 
-              <div class="form-group">
-                <label>额外参数</label>
-                <input type="text" v-model="ytdlpConfig.extra_options" placeholder="--write-comments --cookies-from-browser chrome" class="form-input" />
-                <span class="form-hint">yt-dlp 支持的其他参数，用空格分隔</span>
+              <div class="flex flex-col gap-1.5">
+                <label class="text-[13px] font-medium text-[#374151]">额外参数</label>
+                <input
+                  type="text"
+                  v-model="ytdlpConfig.extra_options"
+                  placeholder="--write-comments --cookies-from-browser chrome"
+                  class="rounded-md border border-[#e5e7eb] px-3 py-2.5 text-sm text-[#1a1a2e] transition-all focus:border-[#667eea] focus:outline-none focus:shadow-[0_0_0_3px_rgba(102,126,234,0.1)]"
+                />
+                <span class="text-xs text-[#94a3b8]">yt-dlp 支持的其他参数，用空格分隔</span>
               </div>
 
-              <div class="form-actions">
-                <button @click="saveYtdlpConfig" :disabled="isSaving" class="btn-primary">
+              <div class="flex justify-end gap-3 border-t border-[#f0f0f0] pt-3">
+                <button
+                  @click="saveYtdlpConfig"
+                  :disabled="isSaving"
+                  class="rounded-md border-none bg-[#667eea] px-5 py-2.5 text-sm font-medium text-white transition-all hover:bg-[#5a67d8] disabled:cursor-not-allowed disabled:opacity-60"
+                >
                   {{ isSaving ? '保存中...' : '保存配置' }}
                 </button>
               </div>
@@ -574,38 +691,38 @@ async function saveYtdlpConfig() {
         </div>
 
         <!-- 代理设置 -->
-        <div v-if="activeSection === 'proxy'" class="section">
-          <div class="section-header">
-            <h3>代理设置</h3>
-            <p>配置网络代理以访问受限网站</p>
+        <div v-if="activeSection === 'proxy'" class="w-full max-w-none">
+          <div class="mb-4">
+            <h3 class="mb-1 mt-0 text-lg font-semibold text-[#1a1a2e]">代理设置</h3>
+            <p class="m-0 text-[13px] text-[#94a3b8]">配置网络代理以访问受限网站</p>
           </div>
 
-          <div class="content-wrapper">
-            <div class="coming-soon">
+          <div class="box-border w-full rounded-[10px] border border-[#e5e7eb] bg-white p-4">
+            <div class="flex flex-col items-center justify-center px-5 py-[60px] text-center text-[#94a3b8]">
               <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                 <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
                 <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
               </svg>
-              <p>代理设置功能开发中</p>
+              <p class="m-0 text-sm">代理设置功能开发中</p>
             </div>
           </div>
         </div>
 
         <!-- AI 设置 -->
-        <div v-if="activeSection === 'ai'" class="section">
-          <div class="section-header">
-            <h3>AI 设置</h3>
-            <p>配置 AI 相关功能</p>
+        <div v-if="activeSection === 'ai'" class="w-full max-w-none">
+          <div class="mb-4">
+            <h3 class="mb-1 mt-0 text-lg font-semibold text-[#1a1a2e]">AI 设置</h3>
+            <p class="m-0 text-[13px] text-[#94a3b8]">配置 AI 相关功能</p>
           </div>
 
-          <div class="content-wrapper">
-            <div class="coming-soon">
+          <div class="box-border w-full rounded-[10px] border border-[#e5e7eb] bg-white p-4">
+            <div class="flex flex-col items-center justify-center px-5 py-[60px] text-center text-[#94a3b8]">
               <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                 <path d="M12 2a10 10 0 1 0 10 10"/>
                 <path d="M12 16v-4"/>
                 <path d="M12 8h.01"/>
               </svg>
-              <p>AI 设置功能开发中</p>
+              <p class="m-0 text-sm">AI 设置功能开发中</p>
             </div>
           </div>
         </div>
@@ -615,586 +732,14 @@ async function saveYtdlpConfig() {
 </template>
 
 <style scoped>
-.settings-page {
-  height: 100%;
-  display: flex;
-  background: #f5f6f8;
-  border-radius: 12px;
-  overflow: hidden;
-}
-
-/* 保存消息提示 */
-.save-message {
-  position: fixed;
-  top: 70px;
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 10px 24px;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 500;
-  z-index: 1000;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-}
-
-.save-message.success {
-  background: #f0fdf4;
-  color: #166534;
-  border: 1px solid #bbf7d0;
-}
-
-.save-message.error {
-  background: #fef2f2;
-  color: #991b1b;
-  border: 1px solid #fecaca;
-}
-
-.fade-enter-active, .fade-leave-active {
+.fade-enter-active,
+.fade-leave-active {
   transition: all 0.3s ease;
 }
 
-.fade-enter-from, .fade-leave-to {
+.fade-enter-from,
+.fade-leave-to {
   opacity: 0;
   transform: translateX(20px);
-}
-
-/* 左侧导航 */
-.settings-nav {
-  width: 160px;
-  background: #fff;
-  border-right: 1px solid #e5e7eb;
-  flex-shrink: 0;
-}
-
-.nav-header {
-  padding: 16px 12px;
-  border-bottom: 1px solid #e5e7eb;
-}
-
-.nav-header h2 {
-  font-size: 16px;
-  font-weight: 600;
-  color: #1a1a2e;
-  margin: 0;
-}
-
-.nav-list {
-  padding: 12px 8px;
-}
-
-.nav-item {
-  display: block;
-  width: 100%;
-  padding: 10px 12px;
-  background: transparent;
-  border: none;
-  border-radius: 6px;
-  font-size: 14px;
-  color: #64748b;
-  cursor: pointer;
-  transition: all 0.2s;
-  text-align: left;
-}
-
-.nav-item:hover {
-  background: #f5f6f8;
-  color: #1a1a2e;
-}
-
-.nav-item.active {
-  background: #eef2ff;
-  color: #667eea;
-  font-weight: 500;
-}
-
-/* 右侧内容 */
-.settings-content {
-  flex: 1;
-  overflow-y: auto;
-  padding: 20px 30px;
-}
-
-.loading {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  color: #94a3b8;
-}
-
-.spinner {
-  width: 32px;
-  height: 32px;
-  border: 3px solid #e5e7eb;
-  border-top-color: #667eea;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-.section {
-  width: 100%;
-  max-width: none;
-}
-
-.section-header {
-  margin-bottom: 16px;
-}
-
-.section-header h3 {
-  font-size: 18px;
-  font-weight: 600;
-  color: #1a1a2e;
-  margin: 0 0 4px;
-}
-
-.section-header p {
-  font-size: 13px;
-  color: #94a3b8;
-  margin: 0;
-}
-
-.content-wrapper {
-  background: #fff;
-  border-radius: 10px;
-  border: 1px solid #e5e7eb;
-  padding: 16px;
-  width: 100%;
-  box-sizing: border-box;
-}
-
-.section-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 16px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid #f0f0f0;
-}
-
-.section-toolbar h4 {
-  font-size: 15px;
-  font-weight: 600;
-  color: #1a1a2e;
-  margin: 0;
-}
-
-.back-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 6px 12px;
-  background: #f5f6f8;
-  color: #64748b;
-  border: none;
-  border-radius: 6px;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.back-btn:hover {
-  background: #e5e7eb;
-}
-
-.add-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 6px 12px;
-  background: #667eea;
-  color: white;
-  border: none;
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-}
-
-.add-btn:hover {
-  background: #5a67d8;
-}
-
-.empty-state {
-  text-align: center;
-  padding: 40px 20px;
-  color: #94a3b8;
-}
-
-.empty-state svg {
-  opacity: 0.4;
-  margin-bottom: 12px;
-}
-
-.empty-state .hint {
-  font-size: 12px;
-  margin-top: 8px;
-}
-
-/* 网站列表 */
-.website-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.website-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px;
-  background: #fafbfc;
-  border-radius: 8px;
-  border: 1px solid #f0f0f0;
-}
-
-.website-item:hover {
-  border-color: #e5e7eb;
-}
-
-.item-main {
-  flex: 1;
-  min-width: 0;
-}
-
-.item-info {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 4px;
-}
-
-.item-name {
-  font-size: 14px;
-  font-weight: 500;
-  color: #1a1a2e;
-}
-
-.default-badge {
-  padding: 2px 8px;
-  background: #eef2ff;
-  color: #667eea;
-  border-radius: 4px;
-  font-size: 11px;
-  font-weight: 500;
-}
-
-.item-url {
-  font-size: 12px;
-  color: #94a3b8;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.item-actions {
-  display: flex;
-  gap: 4px;
-  margin-left: 12px;
-}
-
-.action-btn {
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  color: #94a3b8;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.action-btn:hover {
-  background: #fff;
-  color: #667eea;
-}
-
-.action-btn.delete:hover {
-  background: #fee2e2;
-  color: #dc2626;
-}
-
-/* 表单样式 */
-.form-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.form-row {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 16px;
-}
-
-@media (max-width: 600px) {
-  .form-row {
-    grid-template-columns: 1fr;
-  }
-}
-
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.form-group label {
-  font-size: 13px;
-  font-weight: 500;
-  color: #374151;
-}
-
-.form-input {
-  padding: 10px 12px;
-  border: 1px solid #e5e7eb;
-  border-radius: 6px;
-  font-size: 14px;
-  color: #1a1a2e;
-  transition: all 0.2s;
-}
-
-.form-input:focus {
-  outline: none;
-  border-color: #667eea;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-}
-
-/* Select dropdown styling */
-select.form-input {
-  appearance: none;
-  -webkit-appearance: none;
-  -moz-appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 12px center;
-  padding-right: 36px;
-  cursor: pointer;
-}
-
-select.form-input:hover {
-  border-color: #d1d5db;
-}
-
-select.form-input:focus {
-  border-color: #667eea;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-}
-
-.form-hint {
-  font-size: 12px;
-  color: #94a3b8;
-}
-
-.input-with-btn {
-  display: flex;
-  gap: 8px;
-}
-
-.input-with-btn .form-input {
-  flex: 1;
-}
-
-.form-divider {
-  height: 1px;
-  background: #f0f0f0;
-  margin: 4px 0;
-}
-
-.form-group-inline {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-}
-
-.checkbox-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  font-size: 14px;
-  color: #374151;
-}
-
-.checkbox-label input {
-  width: 16px;
-  height: 16px;
-  accent-color: #667eea;
-}
-
-.btn-primary {
-  padding: 10px 20px;
-  background: #667eea;
-  color: white;
-  border: none;
-  border-radius: 6px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-primary:hover:not(:disabled) {
-  background: #5a67d8;
-}
-
-.btn-primary:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.btn-secondary {
-  padding: 10px 16px;
-  background: #f5f6f8;
-  color: #64748b;
-  border: 1px solid #e5e7eb;
-  border-radius: 6px;
-  font-size: 14px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-secondary:hover {
-  background: #e5e7eb;
-  color: #1a1a2e;
-}
-
-.form-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
-  padding-top: 12px;
-  border-top: 1px solid #f0f0f0;
-}
-
-/* LocalStorage 表单 */
-.add-storage-form {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.storage-input {
-  flex: 1;
-  padding: 8px 12px;
-  border: 1px solid #e5e7eb;
-  border-radius: 6px;
-  font-size: 13px;
-}
-
-.storage-input:focus {
-  outline: none;
-  border-color: #667eea;
-}
-
-.add-btn-small {
-  padding: 8px 14px;
-  background: #f5f6f8;
-  color: #64748b;
-  border: 1px solid #e5e7eb;
-  border-radius: 6px;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.add-btn-small:hover {
-  background: #667eea;
-  color: white;
-  border-color: #667eea;
-}
-
-.storage-table {
-  border: 1px solid #f0f0f0;
-  border-radius: 6px;
-  overflow: hidden;
-}
-
-.table-row {
-  display: flex;
-  align-items: center;
-  padding: 10px 12px;
-  border-bottom: 1px solid #f5f5f5;
-}
-
-.table-row:last-child {
-  border-bottom: none;
-}
-
-.table-row.header {
-  background: #fafbfc;
-  font-size: 12px;
-  font-weight: 600;
-  color: #64748b;
-}
-
-.col-key {
-  width: 100px;
-  font-size: 13px;
-  color: #1a1a2e;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.col-value {
-  flex: 1;
-  min-width: 0;
-  font-size: 12px;
-  color: #64748b;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.col-action {
-  width: 32px;
-  display: flex;
-  justify-content: center;
-}
-
-.delete-btn {
-  width: 24px;
-  height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  color: #94a3b8;
-  border: none;
-  border-radius: 4px;
-  font-size: 16px;
-  cursor: pointer;
-}
-
-.delete-btn:hover {
-  background: #fee2e2;
-  color: #dc2626;
-}
-
-/* 即将推出 */
-.coming-soon {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 60px 20px;
-  text-align: center;
-  color: #94a3b8;
-}
-
-.coming-soon svg {
-  opacity: 0.4;
-  margin-bottom: 12px;
-}
-
-.coming-soon p {
-  font-size: 14px;
-  margin: 0;
 }
 </style>
