@@ -51,51 +51,38 @@ impl DlnaService {
         self.stop_media_server().await?;
 
         let host_ip = Self::get_local_ip().await?;
+        let path_buf = std::path::PathBuf::from(&file_path);
         
-        let file_path_for_route = file_path.clone();
+        tracing::info!("[DLNA] Starting server with file: {:?}", path_buf);
         
+        // 使用 warp 内置的 file 过滤，自动处理 Range 请求
         let video_route = warp::path("video")
-            .and(warp::any().map(move || file_path_for_route.clone()))
-            .map(|file_path: String| {
-                use std::io::Read;
-                let mut file = std::fs::File::open(&file_path).ok();
-                let (buf, file_size) = if let Some(ref mut f) = file {
-                    let metadata = f.metadata().ok();
-                    let size = metadata.map(|m| m.len()).unwrap_or(0);
-                    let mut buffer = Vec::new();
-                    let _ = f.read_to_end(&mut buffer);
-                    (buffer, size)
-                } else {
-                    (Vec::new(), 0)
-                };
-                
-                warp::http::Response::builder()
-                    .header("Content-Type", "video/mp4")
-                    .header("Accept-Ranges", "bytes")
-                    .header("Content-Length", file_size)
-                    .header("TransferMode.DLNA.ORG", "Streaming")
-                    .header("ContentFeatures.DLNA.ORG", "DLNA.ORG_OP=01;DLNA.ORG_PS=1;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000")
-                    .body(buf)
-                    .unwrap_or_else(|_| {
-                        warp::http::Response::builder()
-                            .status(500)
-                            .body(Vec::new())
-                            .unwrap()
-                    })
+            .and(warp::fs::file(path_buf))
+            .map(|reply: warp::filters::fs::File| {
+                warp::reply::with_header(
+                    warp::reply::with_header(
+                        warp::reply::with_header(
+                            reply,
+                            "Content-Type", "video/mp4"
+                        ),
+                        "TransferMode.DLNA.ORG", "Streaming"
+                    ),
+                    "ContentFeatures.DLNA.ORG", "DLNA.ORG_OP=01;DLNA.ORG_PS=1;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000"
+                )
             });
 
         let addr: SocketAddr = format!("{}:{}", host_ip, port).parse()
             .map_err(|e| format!("Failed to parse address: {}", e))?;
 
-        let (_addr, server) = warp::serve(video_route).bind_with_graceful_shutdown(addr, async {
-            tokio::time::sleep(Duration::from_secs(3600)).await;
-        });
+        tracing::info!("[DLNA] Binding to {}", addr);
+
+        let (addr, server) = warp::serve(video_route).bind_ephemeral(addr);
 
         let handle = tokio::spawn(server);
 
         *self.streaming_server.lock().await = Some(handle);
 
-        let streaming_url = format!("http://{}:{}/video", host_ip, port);
+        let streaming_url = format!("http://{}:{}/video", host_ip, addr.port());
         tracing::info!("[DLNA] Media server started at {}", streaming_url);
         
         Ok(streaming_url)
