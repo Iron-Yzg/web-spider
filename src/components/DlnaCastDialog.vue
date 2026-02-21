@@ -1,14 +1,14 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import type { LocalVideo } from '../types'
-import type { DlnaDevice } from '../services/api'
+import type { CastDevice, CastProtocol } from '../services/api'
 import { 
-  discoverDlnaDevices, 
+  discoverCastDevices,
+  castMedia,
+  stopCastPlayback,
   getLocalIpAddress,
   startDlnaMediaServer,
   stopDlnaMediaServer,
-  stopDlnaPlayback,
-  castToDlnaDevice 
 } from '../services/api'
 
 const props = defineProps<{
@@ -20,7 +20,7 @@ const emit = defineEmits<{
 }>()
 
 const isDiscovering = ref(false)
-const devices = ref<DlnaDevice[]>([])
+const devices = ref<CastDevice[]>([])
 const localIp = ref('')
 const serverUrl = ref('')
 const isStartingServer = ref(false)
@@ -28,9 +28,15 @@ const isCasting = ref(false)
 const statusMessage = ref('')
 const selectedDevice = ref<string | null>(null)
 const castDeviceName = ref<string | null>(null)
+const selectedProtocol = ref<CastProtocol>('sony')
+const managedServer = ref(false)
 
 onMounted(async () => {
   await handleStartServer()
+  await handleDiscover()
+})
+
+watch(selectedProtocol, async () => {
   await handleDiscover()
 })
 
@@ -43,13 +49,13 @@ async function handleDiscover() {
   try {
     const [ip, foundDevices] = await Promise.all([
       getLocalIpAddress(),
-      discoverDlnaDevices(5)
+      discoverCastDevices(selectedProtocol.value, 5)
     ])
     localIp.value = ip
     devices.value = foundDevices
     
     if (foundDevices.length === 0) {
-      statusMessage.value = '未发现任何 DLNA 设备'
+      statusMessage.value = '未发现可用设备'
     } else {
       statusMessage.value = `发现 ${foundDevices.length} 个设备`
     }
@@ -68,21 +74,20 @@ async function handleStartServer() {
   if (!props.video) return
   
   isStartingServer.value = true
-  
-  // 网络视频不需要启动本地服务器
-  if (!isLocalVideo.value && props.video.m3u8_url) {
-    serverUrl.value = props.video.m3u8_url
-    statusMessage.value = '使用网络视频地址'
-    isStartingServer.value = false
-    return
-  }
-  
+
   statusMessage.value = '正在启动媒体服务器...'
   
   try {
-    const url = await startDlnaMediaServer(props.video.file_path, 8080)
+    const source = isLocalVideo.value ? props.video.file_path : (props.video.m3u8_url || '')
+    if (!source) {
+      throw new Error('未找到可投屏的视频地址')
+    }
+    const url = await startDlnaMediaServer(source, 8080)
+    managedServer.value = true
     serverUrl.value = url
-    statusMessage.value = `服务器已启动: ${url}`
+    statusMessage.value = isLocalVideo.value
+      ? `本地媒体服务已启动: ${url}`
+      : `HLS 代理已启动: ${url}`
   } catch (e) {
     statusMessage.value = `启动服务器失败: ${e}`
   } finally {
@@ -101,11 +106,7 @@ async function handleCast() {
   
   try {
     castDeviceName.value = selectedDevice.value
-    await castToDlnaDevice(
-      selectedDevice.value,
-      serverUrl.value,
-      props.video.name
-    )
+    await castMedia(selectedProtocol.value, selectedDevice.value, serverUrl.value, props.video.name)
     statusMessage.value = '已发送播放命令，请查看电视'
   } catch (e) {
     statusMessage.value = `投屏失败: ${e}`
@@ -117,15 +118,22 @@ async function handleCast() {
 async function handleClose() {
   // 异步停止电视播放
   if (castDeviceName.value) {
-    stopDlnaPlayback(castDeviceName.value).catch(e => console.error('停止播放失败:', e))
+    stopCastPlayback(selectedProtocol.value, castDeviceName.value).catch(e => console.error('停止播放失败:', e))
   }
   
-  // 仅对本地视频停止服务器
-  if (isLocalVideo.value && serverUrl.value) {
+  // 本地文件与网络 HLS 代理都需要停止服务器
+  if (managedServer.value && serverUrl.value) {
     stopDlnaMediaServer().catch(e => console.error('停止服务器失败:', e))
   }
   
   emit('close')
+}
+
+function protocolLabel(protocol: string): string {
+  if (protocol === 'dlna') return 'DLNA'
+  if (protocol === 'chromecast') return 'Chromecast'
+  if (protocol === 'airplay') return 'AirPlay'
+  return protocol
 }
 </script>
 
@@ -146,6 +154,17 @@ async function handleClose() {
         <div class="video-info">
           <span class="label">投屏视频:</span>
           <span class="value">{{ video.name }}</span>
+        </div>
+
+        <div class="video-info">
+          <span class="label">协议:</span>
+          <select v-model="selectedProtocol" class="protocol-select">
+            <option value="sony">Sony 优先（推荐）</option>
+            <option value="auto">自动</option>
+            <option value="dlna">DLNA</option>
+            <option value="chromecast">Chromecast（实验）</option>
+            <option value="airplay">AirPlay（实验）</option>
+          </select>
         </div>
         
         <div class="action-row">
@@ -173,15 +192,19 @@ async function handleClose() {
           <div class="devices">
             <button 
               v-for="device in devices" 
-              :key="device.udn"
-              :class="['device-item', { selected: selectedDevice === device.name }]"
-              @click="selectedDevice = device.name"
+              :key="device.id"
+              :class="['device-item', { selected: selectedDevice === device.id, unavailable: !device.available }]"
+              @click="device.available ? selectedDevice = device.id : null"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="2" y="7" width="20" height="15" rx="2" ry="2"></rect>
-                <polyline points="17 2 12 7 7 2"></polyline>
-              </svg>
-              {{ device.name }}
+              <span class="device-main">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="2" y="7" width="20" height="15" rx="2" ry="2"></rect>
+                  <polyline points="17 2 12 7 7 2"></polyline>
+                </svg>
+                <span>{{ device.name }}</span>
+              </span>
+              <small class="proto">{{ protocolLabel(device.protocol) }}</small>
+              <small v-if="device.note" class="note">{{ device.note }}</small>
             </button>
           </div>
         </div>
@@ -274,6 +297,15 @@ async function handleClose() {
 .video-info .value {
   color: #1a1a2e;
   font-weight: 500;
+}
+
+.protocol-select {
+  border: 1px solid #e8e8e8;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+  color: #1a1a2e;
+  background: #fff;
 }
 
 .action-row {
@@ -369,7 +401,8 @@ async function handleClose() {
 
 .device-item {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
+  flex-direction: column;
   gap: 6px;
   padding: 8px 12px;
   border: 1px solid #e2e8f0;
@@ -381,6 +414,12 @@ async function handleClose() {
   transition: all 0.2s;
 }
 
+.device-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .device-item:hover {
   border-color: #cbd5e1;
 }
@@ -389,6 +428,21 @@ async function handleClose() {
   border-color: #667eea;
   background: #f0f5ff;
   color: #667eea;
+}
+
+.device-item.unavailable {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.proto {
+  font-size: 11px;
+  color: #6366f1;
+}
+
+.note {
+  font-size: 11px;
+  color: #94a3b8;
 }
 
 .status-message {

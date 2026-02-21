@@ -147,6 +147,16 @@ export interface DlnaDevice {
   udn: string
 }
 
+export type CastProtocol = 'auto' | 'sony' | 'dlna' | 'chromecast' | 'airplay'
+
+export interface CastDevice {
+  id: string
+  name: string
+  protocol: string
+  available: boolean
+  note?: string | null
+}
+
 export async function discoverDlnaDevices(timeoutSecs = 5): Promise<DlnaDevice[]> {
   return await invoke<DlnaDevice[]>('discover_dlna_devices', { timeoutSecs })
 }
@@ -169,4 +179,16 @@ export async function stopDlnaPlayback(deviceName: string): Promise<void> {
 
 export async function castToDlnaDevice(deviceName: string, videoUrl: string, title: string): Promise<void> {
   await invoke('cast_to_dlna_device', { deviceName, videoUrl, title })
+}
+
+export async function discoverCastDevices(protocol: CastProtocol, timeoutSecs = 5): Promise<CastDevice[]> {
+  return await invoke<CastDevice[]>('discover_cast_devices', { protocol, timeoutSecs })
+}
+
+export async function castMedia(protocol: CastProtocol, deviceId: string, videoUrl: string, title: string): Promise<void> {
+  await invoke('cast_media', { protocol, deviceId, videoUrl, title })
+}
+
+export async function stopCastPlayback(protocol: CastProtocol, deviceId: string): Promise<void> {
+  await invoke('stop_cast_playback', { protocol, deviceId })
 }

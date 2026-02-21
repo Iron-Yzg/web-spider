@@ -185,6 +185,9 @@ pub fn run() {
             commands::stop_dlna_media_server,
             commands::stop_dlna_playback,
             commands::cast_to_dlna_device,
+            commands::discover_cast_devices,
+            commands::cast_media,
+            commands::stop_cast_playback,
         ]);
 
     builder

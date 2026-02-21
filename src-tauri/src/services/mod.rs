@@ -47,7 +47,7 @@ pub use remux::{
 pub use hls_server::cleanup_all_hls_servers;
 
 // 重新导出 DLNA 模块
-pub use dlna::{DlnaService, DlnaDevice};
+pub use dlna::DlnaService;
 
 /// 使用 Tauri 2.x Sidecar API 获取 sidecar 的实际路径
 /// Tauri 会自动处理平台后缀，只需要提供基础名称
