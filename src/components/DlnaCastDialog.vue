@@ -7,6 +7,7 @@ import {
   getLocalIpAddress,
   startDlnaMediaServer,
   stopDlnaMediaServer,
+  stopDlnaPlayback,
   castToDlnaDevice 
 } from '../services/api'
 
@@ -122,6 +123,13 @@ async function handleStopServer() {
 }
 
 async function handleClose() {
+  if (serverUrl.value && selectedDevice.value) {
+    try {
+      await stopDlnaPlayback(selectedDevice.value)
+    } catch (e) {
+      console.error('停止播放失败:', e)
+    }
+  }
   if (serverUrl.value) {
     try {
       await stopDlnaMediaServer()

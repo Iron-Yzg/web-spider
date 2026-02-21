@@ -1006,6 +1006,12 @@ pub async fn stop_dlna_media_server() -> Result<(), String> {
 }
 
 #[tauri::command]
+pub async fn stop_dlna_playback(device_name: String) -> Result<(), String> {
+    let service = DLNA_SERVICE.lock().await;
+    service.stop_playback(device_name).await
+}
+
+#[tauri::command]
 pub async fn cast_to_dlna_device(
     device_name: String,
     video_url: String,

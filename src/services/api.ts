@@ -163,6 +163,10 @@ export async function stopDlnaMediaServer(): Promise<void> {
   await invoke('stop_dlna_media_server')
 }
 
+export async function stopDlnaPlayback(deviceName: string): Promise<void> {
+  await invoke('stop_dlna_playback', { deviceName })
+}
+
 export async function castToDlnaDevice(deviceName: string, videoUrl: string, title: string): Promise<void> {
   await invoke('cast_to_dlna_device', { deviceName, videoUrl, title })
 }
