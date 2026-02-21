@@ -2,7 +2,7 @@
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { convertFileSrc } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-import { YtdlpTask, YtdlpTaskStatus } from '../types'
+import { YtdlpTask, YtdlpTaskStatus, LocalVideo } from '../types'
 import {
   getConfig,
   getYtdlpTasks,
@@ -14,6 +14,7 @@ import {
 } from '../services/api'
 import AddTaskDialog from '../components/AddTaskDialog.vue'
 import VideoPlayer from '../components/VideoPlayer.vue'
+import DlnaCastDialog from '../components/DlnaCastDialog.vue'
 
 // 任务列表
 const tasks = ref<YtdlpTask[]>([])
@@ -30,6 +31,29 @@ const statusFilter = ref<YtdlpTaskStatus | ''>('')
 
 // 弹窗状态
 const showAddDialog = ref(false)
+
+// DLNA 投屏弹窗
+const showDlnaDialog = ref(false)
+const dlnaVideo = ref<LocalVideo | null>(null)
+
+function openDlnaDialog(task: YtdlpTask) {
+  if (!task.file_path) return
+  dlnaVideo.value = {
+    id: task.id,
+    name: task.title,
+    file_path: task.file_path,
+    file_size: '',
+    duration: '',
+    resolution: task.resolution || '',
+    added_at: '',
+  }
+  showDlnaDialog.value = true
+}
+
+function closeDlnaDialog() {
+  showDlnaDialog.value = false
+  dlnaVideo.value = null
+}
 
 // 监听器
 let unlistenProgress: (() => void) | null = null
@@ -481,6 +505,12 @@ watch([searchQuery, statusFilter, () => tasks.value], () => {
                     <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
                   </svg>
                 </button>
+                <button @click="openDlnaDialog(task)" class="action-btn cast" title="投屏">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="2" y="7" width="20" height="15" rx="2" ry="2"></rect>
+                    <polyline points="17 2 12 7 7 2"></polyline>
+                  </svg>
+                </button>
               </template>
 
               <!-- 未运行且不是已完成的任务显示删除 -->
@@ -518,6 +548,13 @@ watch([searchQuery, statusFilter, () => tasks.value], () => {
       @close="handlePlayerClose"
       @play-next="handlePlayNext"
       @delete-current="handleDeleteCurrent"
+    />
+
+    <!-- DLNA 投屏弹窗 -->
+    <DlnaCastDialog
+      v-if="dlnaVideo"
+      :video="dlnaVideo"
+      @close="closeDlnaDialog"
     />
   </div>
 </template>
@@ -959,6 +996,15 @@ watch([searchQuery, statusFilter, () => tasks.value], () => {
 .action-btn.folder:hover {
   background: #e5e7eb;
   color: #374151;
+}
+
+.action-btn.cast {
+  background: #fef3c7;
+  color: #d97706;
+}
+
+.action-btn.cast:hover {
+  background: #fde68a;
 }
 
 .action-btn.delete {

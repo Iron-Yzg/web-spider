@@ -139,3 +139,30 @@ export async function addLocalVideo(video: LocalVideo): Promise<void> {
 export async function deleteLocalVideo(id: string): Promise<void> {
   await invoke('delete_local_video_db', { id })
 }
+
+// ==================== DLNA 投屏 API ====================
+
+export interface DlnaDevice {
+  name: string
+  udn: string
+}
+
+export async function discoverDlnaDevices(timeoutSecs = 5): Promise<DlnaDevice[]> {
+  return await invoke<DlnaDevice[]>('discover_dlna_devices', { timeoutSecs })
+}
+
+export async function getLocalIpAddress(): Promise<string> {
+  return await invoke<string>('get_local_ip_address')
+}
+
+export async function startDlnaMediaServer(filePath: string, port = 8080): Promise<string> {
+  return await invoke<string>('start_dlna_media_server', { filePath, port })
+}
+
+export async function stopDlnaMediaServer(): Promise<void> {
+  await invoke('stop_dlna_media_server')
+}
+
+export async function castToDlnaDevice(deviceName: string, videoUrl: string, title: string): Promise<void> {
+  await invoke('cast_to_dlna_device', { deviceName, videoUrl, title })
+}

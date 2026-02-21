@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { invoke, convertFileSrc } from '@tauri-apps/api/core'
 import type { LocalVideo } from '../types'
 import VideoPlayer from '../components/VideoPlayer.vue'
+import DlnaCastDialog from '../components/DlnaCastDialog.vue'
 import { getLocalVideos, addLocalVideo, deleteLocalVideo as deleteLocalVideoApi } from '../services/api'
 
 const videos = ref<LocalVideo[]>([])
@@ -14,6 +15,20 @@ const selectDialog = ref<{ visible: boolean, message: string, onConfirm: (() => 
   message: '',
   onConfirm: null
 })
+
+// DLNA 投屏弹窗
+const showDlnaDialog = ref(false)
+const dlnaVideo = ref<LocalVideo | null>(null)
+
+function openDlnaDialog(video: LocalVideo) {
+  dlnaVideo.value = video
+  showDlnaDialog.value = true
+}
+
+function closeDlnaDialog() {
+  showDlnaDialog.value = false
+  dlnaVideo.value = null
+}
 
 // 播放器状态
 const playerVisible = ref(false)
@@ -356,14 +371,20 @@ onMounted(async () => {
             <div class="col-added">{{ video.added_at.split('T')[0] }}</div>
             <div class="col-action">
               <button @click="playVideo(video)" class="action-btn play" title="播放">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none">
                   <polygon points="5 3 19 12 5 21 5 3"></polygon>
                 </svg>
               </button>
+              <button @click="openDlnaDialog(video)" class="action-btn cast" title="投屏">
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="2" y="7" width="20" height="15" rx="2" ry="2"></rect>
+                  <polyline points="17 2 12 7 7 2"></polyline>
+                </svg>
+              </button>
               <button @click="deleteVideo(video.id)" class="action-btn delete" title="删除">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <line x1="18" y1="6" x2="6" y2="18"></line>
-                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="3 6 5 6 21 6"></polyline>
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
                 </svg>
               </button>
             </div>
@@ -396,6 +417,13 @@ onMounted(async () => {
       @close="handlePlayerClose"
       @play-next="handlePlayNext"
       @delete-current="handleDeleteCurrent"
+    />
+
+    <!-- DLNA 投屏弹窗 -->
+    <DlnaCastDialog
+      v-if="dlnaVideo"
+      :video="dlnaVideo"
+      @close="closeDlnaDialog"
     />
   </div>
 </template>
@@ -615,45 +643,45 @@ onMounted(async () => {
 }
 
 .col-size {
-  width: 80px;
+  width: 60px;
   font-size: 13px;
   color: #64748b;
   flex-shrink: 0;
 }
 
 .col-duration {
-  width: 80px;
+  width: 60px;
   font-size: 13px;
   color: #64748b;
   flex-shrink: 0;
 }
 
 .col-resolution {
-  width: 100px;
+  width: 80px;
   font-size: 13px;
   color: #64748b;
   flex-shrink: 0;
 }
 
 .col-added {
-  width: 100px;
+  width: 80px;
   font-size: 13px;
   color: #64748b;
   flex-shrink: 0;
 }
 
 .col-action {
-  width: 80px;
+  width: 110px;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   flex-shrink: 0;
 }
 
 .action-btn {
-  padding: 6px 10px;
+  padding: 5px 6px;
   border: none;
-  border-radius: 6px;
+  border-radius: 4px;
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
@@ -672,10 +700,16 @@ onMounted(async () => {
   background: #fde68a;
 }
 
+.action-btn.cast {
+  background: #e0e7ff;
+  color: #4f46e5;
+}
+
+.action-btn.cast:hover {
+  background: #c7d2fe;
+}
+
 .action-btn.delete {
-  width: 28px;
-  height: 28px;
-  padding: 0;
   background: #fee2e2;
   color: #dc2626;
 }

@@ -178,6 +178,12 @@ pub fn run() {
             commands::start_video_playback_cmd,
             commands::stop_video_remux,
             commands::open_with_system_player,
+            // DLNA 投屏命令
+            commands::discover_dlna_devices,
+            commands::get_local_ip_address,
+            commands::start_dlna_media_server,
+            commands::stop_dlna_media_server,
+            commands::cast_to_dlna_device,
         ]);
 
     builder
