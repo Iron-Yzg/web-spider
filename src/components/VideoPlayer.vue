@@ -58,14 +58,26 @@ const isCreating = ref(false)
 // 需要转码的格式
 const TRANSCODE_FORMATS = ['.mkv', '.avi', '.flv', '.wmv', '.rm', '.rmvb', '.ts', '.mpeg', '.mpg']
 
+function normalizeMediaPath(input: string): string {
+  let value = input.trim()
+  value = value.replace(/\\\//g, '/')
+  value = value.replace(/^"(.*)"$/, '$1')
+  return value
+}
+
+function isHttpUrl(path: string): boolean {
+  return /^https?:\/\//i.test(path)
+}
+
 // 检查是否需要转码（仅本地文件）
 function needsTranscoding(url: string): boolean {
+  const normalized = normalizeMediaPath(url)
   // 网络 URL 直接返回 false
-  if (url.startsWith('http://') || url.startsWith('https://')) {
+  if (isHttpUrl(normalized)) {
     return false
   }
   // 本地文件检查扩展名
-  const lowerUrl = url.toLowerCase()
+  const lowerUrl = normalized.toLowerCase()
   return TRANSCODE_FORMATS.some(ext => lowerUrl.endsWith(ext))
 }
 
@@ -124,7 +136,7 @@ async function stopTranscoding() {
 // 使用系统播放器打开
 async function openWithSystemPlayer() {
   try {
-    const filePath = props.src
+    const filePath = normalizeMediaPath(props.src)
     console.log('[VideoPlayer] 使用系统播放器打开:', filePath)
     await invoke('open_with_system_player', { filePath })
     // 关闭当前播放器
@@ -202,9 +214,9 @@ async function createPlayer() {
   destroyPlayer()
   await new Promise(resolve => setTimeout(resolve, 100))
 
-  const originalPath = props.src  // 原始文件路径
+  const originalPath = normalizeMediaPath(props.src)  // 原始文件路径
   let playUrl = originalPath
-  let isHls = originalPath.endsWith('.m3u8') || originalPath.includes('.m3u8')
+  let isHls = originalPath.toLowerCase().includes('.m3u8')
 
   // 检查是否需要转码/解复用
   if (needsTranscoding(originalPath)) {
@@ -229,7 +241,7 @@ async function createPlayer() {
       error.value = '无法播放此视频格式，建议使用系统播放器'
       return
     }
-  } else if (originalPath.startsWith('http://') || originalPath.startsWith('https://')) {
+  } else if (isHttpUrl(originalPath)) {
     // 网络视频直接使用，不需要 convertFileSrc
     playUrl = originalPath
     console.log('[VideoPlayer] 网络视频，直接使用URL:', playUrl)

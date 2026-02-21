@@ -81,31 +81,36 @@ defineEmits<{
   width: 30px;
   height: 30px;
   padding: 0;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  background: white;
-  color: #64748b;
+  border: 1px solid #dbe4f0;
+  border-radius: 9px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  color: #475569;
   cursor: pointer;
-  transition: all 0.16s;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
 }
 
 .icon-btn:hover:not(:disabled) {
-  background: #f8fafc;
-  border-color: #cbd5e1;
+  transform: translateY(-1px);
+  border-color: #b7c7dc;
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.1);
 }
 
 .icon-btn:active:not(:disabled) {
-  transform: scale(0.95);
+  transform: translateY(0) scale(0.96);
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.12);
 }
 
 .icon-btn:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
+  box-shadow: none;
 }
 
 .icon-btn--sm {
   width: 26px;
   height: 26px;
+  border-radius: 7px;
 }
 
 .icon-btn--sm svg {
@@ -113,111 +118,115 @@ defineEmits<{
   height: 12px;
 }
 
+.icon-btn :deep(svg) {
+  flex-shrink: 0;
+}
+
 /* Play - 蓝色 */
 .icon-btn--play {
-  background: #eef6ff;
+  background: linear-gradient(180deg, #eef6ff 0%, #dbeafe 100%);
   border-color: #93c5fd;
-  color: #2563eb;
+  color: #1d4ed8;
 }
 
 .icon-btn--play:hover:not(:disabled) {
-  background: #dbeafe;
+  background: linear-gradient(180deg, #dbeafe 0%, #bfdbfe 100%);
   border-color: #60a5fa;
 }
 
 /* Pause - 琥珀色 */
 .icon-btn--pause {
-  background: #fff7ed;
+  background: linear-gradient(180deg, #fff7ed 0%, #ffedd5 100%);
   border-color: #fdba74;
-  color: #ea580c;
+  color: #c2410c;
 }
 
 .icon-btn--pause:hover:not(:disabled) {
-  background: #ffedd5;
+  background: linear-gradient(180deg, #ffedd5 0%, #fed7aa 100%);
   border-color: #fb923c;
 }
 
 /* Stop - 红色 */
 .icon-btn--stop {
-  background: #fff1f2;
+  background: linear-gradient(180deg, #fff1f2 0%, #ffe4e6 100%);
   border-color: #fda4af;
-  color: #e11d48;
+  color: #be123c;
 }
 
 .icon-btn--stop:hover:not(:disabled) {
-  background: #ffe4e6;
+  background: linear-gradient(180deg, #ffe4e6 0%, #fecdd3 100%);
   border-color: #fb7185;
 }
 
 /* Start - 绿色 */
 .icon-btn--start {
-  background: #f0fdf4;
+  background: linear-gradient(180deg, #f0fdf4 0%, #dcfce7 100%);
   border-color: #86efac;
-  color: #16a34a;
+  color: #15803d;
 }
 
 .icon-btn--start:hover:not(:disabled) {
-  background: #dcfce7;
+  background: linear-gradient(180deg, #dcfce7 0%, #bbf7d0 100%);
   border-color: #4ade80;
 }
 
 /* Cast - 紫色 */
 .icon-btn--cast {
-  background: #eef2ff;
+  background: linear-gradient(180deg, #eef2ff 0%, #e0e7ff 100%);
   border-color: #a5b4fc;
-  color: #4f46e5;
+  color: #4338ca;
 }
 
 .icon-btn--cast:hover:not(:disabled) {
-  background: #e0e7ff;
+  background: linear-gradient(180deg, #e0e7ff 0%, #c7d2fe 100%);
   border-color: #818cf8;
 }
 
 /* Download - 橙色 */
 .icon-btn--download {
-  background: #ecfeff;
+  background: linear-gradient(180deg, #ecfeff 0%, #cffafe 100%);
   border-color: #67e8f9;
-  color: #0891b2;
+  color: #0e7490;
 }
 
 .icon-btn--download:hover:not(:disabled) {
-  background: #cffafe;
+  background: linear-gradient(180deg, #cffafe 0%, #a5f3fc 100%);
   border-color: #22d3ee;
 }
 
 /* Delete - 红色 */
 .icon-btn--delete {
-  background: #fff1f2;
+  background: linear-gradient(180deg, #fff1f2 0%, #ffe4e6 100%);
   border-color: #fda4af;
-  color: #e11d48;
+  color: #be123c;
 }
 
 .icon-btn--delete:hover:not(:disabled) {
-  background: #ffe4e6;
+  background: linear-gradient(180deg, #ffe4e6 0%, #fecdd3 100%);
   border-color: #fb7185;
 }
 
 /* Folder - 灰色 */
 .icon-btn--folder {
-  background: #f8fafc;
+  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
   border-color: #cbd5e1;
-  color: #475569;
+  color: #334155;
 }
 
 .icon-btn--folder:hover:not(:disabled) {
-  background: #f1f5f9;
+  background: linear-gradient(180deg, #f1f5f9 0%, #e2e8f0 100%);
   border-color: #94a3b8;
 }
 
 /* Add - 绿色 */
 .icon-btn--add {
-  background: #f0fdf4;
+  background: linear-gradient(180deg, #f0fdf4 0%, #dcfce7 100%);
   border-color: #86efac;
-  color: #16a34a;
+  color: #15803d;
 }
 
 .icon-btn--add:hover:not(:disabled) {
-  background: #dcfce7;
+  background: linear-gradient(180deg, #dcfce7 0%, #bbf7d0 100%);
   border-color: #4ade80;
 }
 </style>
