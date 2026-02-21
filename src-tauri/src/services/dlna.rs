@@ -12,14 +12,12 @@ pub struct DlnaDevice {
 
 pub struct DlnaService {
     streaming_server: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
-    server_addr: Arc<Mutex<Option<u16>>>,
 }
 
 impl DlnaService {
     pub fn new() -> Self {
         Self {
             streaming_server: Arc::new(Mutex::new(None)),
-            server_addr: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -60,23 +58,30 @@ impl DlnaService {
             .and(warp::any().map(move || file_path_for_route.clone()))
             .map(|file_path: String| {
                 use std::io::Read;
-                let mut buf = Vec::new();
-                if let Ok(mut f) = std::fs::File::open(&file_path) {
-                    let _ = f.read_to_end(&mut buf);
-                }
+                let mut file = std::fs::File::open(&file_path).ok();
+                let (buf, file_size) = if let Some(ref mut f) = file {
+                    let metadata = f.metadata().ok();
+                    let size = metadata.map(|m| m.len()).unwrap_or(0);
+                    let mut buffer = Vec::new();
+                    let _ = f.read_to_end(&mut buffer);
+                    (buffer, size)
+                } else {
+                    (Vec::new(), 0)
+                };
                 
-                let builder = warp::http::Response::builder()
+                warp::http::Response::builder()
                     .header("Content-Type", "video/mp4")
                     .header("Accept-Ranges", "bytes")
+                    .header("Content-Length", file_size)
                     .header("TransferMode.DLNA.ORG", "Streaming")
-                    .header("ContentFeatures.DLNA.ORG", "DLNA.ORG_OP=01;DLNA.ORG_PS=1;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000");
-                
-                builder.body(buf).unwrap_or_else(|_| {
-                    warp::http::Response::builder()
-                        .status(500)
-                        .body(Vec::new())
-                        .unwrap()
-                })
+                    .header("ContentFeatures.DLNA.ORG", "DLNA.ORG_OP=01;DLNA.ORG_PS=1;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000")
+                    .body(buf)
+                    .unwrap_or_else(|_| {
+                        warp::http::Response::builder()
+                            .status(500)
+                            .body(Vec::new())
+                            .unwrap()
+                    })
             });
 
         let addr: SocketAddr = format!("{}:{}", host_ip, port).parse()
@@ -88,7 +93,6 @@ impl DlnaService {
 
         let handle = tokio::spawn(server);
 
-        *self.server_addr.lock().await = Some(port);
         *self.streaming_server.lock().await = Some(handle);
 
         let streaming_url = format!("http://{}:{}/video", host_ip, port);
@@ -101,12 +105,13 @@ impl DlnaService {
         if let Some(handle) = self.streaming_server.lock().await.take() {
             handle.abort();
         }
-        *self.server_addr.lock().await = None;
         Ok(())
     }
 
     pub async fn stop_playback(&self, device_name: String) -> Result<(), String> {
-        let spec = crab_dlna::RenderSpec::Query(5u64, device_name);
+        tracing::info!("[DLNA] Stop playback on device: {}", device_name);
+        
+        let spec = crab_dlna::RenderSpec::Query(5u64, device_name.clone());
         
         let render = crab_dlna::Render::new(spec)
             .await
@@ -117,15 +122,19 @@ impl DlnaService {
         
         let stop_args = "<InstanceID>0</InstanceID>";
         
-        tracing::info!("[DLNA] Sending Stop command");
-        
-        let _result = service
+        let result = service
             .action(device_url, "Stop", stop_args)
             .await;
+
+        match result {
+            Ok(_) => {
+                tracing::info!("[DLNA] Stop command success");
+            }
+            Err(e) => {
+                tracing::error!("[DLNA] Stop command failed: {:?}", e);
+            }
+        }
         
-        tracing::info!("[DLNA] Stop command sent");
-        
-        // Also stop the media server
         self.stop_media_server().await?;
         
         Ok(())
@@ -150,6 +159,7 @@ impl DlnaService {
         let service = &render.service;
         let device_url = render.device.url();
 
+        // 使用完整的 protocolInfo（索尼电视需要）
         let metadata = format!(
             r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
   <item id="0" parentID="-1" restricted="1">
