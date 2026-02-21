@@ -151,9 +151,10 @@ impl DlnaService {
     }
 
     async fn proxy_playlist_handler_by_id(
-        id: String,
+        id_raw: String,
         targets: Arc<Mutex<HashMap<String, String>>>,
     ) -> Result<warp::reply::Response, warp::Rejection> {
+        let id = id_raw.strip_suffix(".m3u8").unwrap_or(&id_raw).to_string();
         let target = {
             let guard = targets.lock().await;
             guard.get(&id).cloned()
@@ -364,7 +365,7 @@ impl DlnaService {
             *self.streaming_server.lock().await = Some(handle);
 
             let start_url = format!(
-                "http://{}:{}/hls/playlist/{}",
+                "http://{}:{}/hls/playlist/{}.m3u8",
                 host_ip,
                 addr.port(),
                 id
@@ -477,22 +478,35 @@ impl DlnaService {
         let full_metadata_arg = Self::escape_xml(&metadata_xml);
         let empty_metadata_arg = String::new();
 
-        let set_args_primary = if matches!(profile, DlnaProfile::Sony) {
+        let using_local_hls_proxy = stream_url.contains("/hls/playlist/") && stream_url.to_lowercase().contains(".m3u8");
+        let is_hls = stream_url.to_lowercase().contains(".m3u8");
+
+        let set_args_with_full = format!(
+            "<InstanceID>0</InstanceID><CurrentURI>{}</CurrentURI><CurrentURIMetaData>{}</CurrentURIMetaData>",
+            escaped_current_uri, full_metadata_arg
+        );
+
+        let set_args_with_empty = format!(
+            "<InstanceID>0</InstanceID><CurrentURI>{}</CurrentURI><CurrentURIMetaData>{}</CurrentURIMetaData>",
+            escaped_current_uri, empty_metadata_arg
+        );
+
+        // For Sony: local/proxy HLS and local MP4 generally prefer full metadata; remote HLS sometimes prefers empty.
+        // Keep both as fallback and swap order by scenario.
+        let (set_args_primary, set_args_fallback) = if matches!(profile, DlnaProfile::Sony) && is_hls && !using_local_hls_proxy {
+            (set_args_with_empty, set_args_with_full)
+        } else {
+            (set_args_with_full, set_args_with_empty)
+        };
+
+        let set_args_primary = if set_args_primary.is_empty() {
             format!(
                 "<InstanceID>0</InstanceID><CurrentURI>{}</CurrentURI><CurrentURIMetaData>{}</CurrentURIMetaData>",
                 escaped_current_uri, empty_metadata_arg
             )
         } else {
-            format!(
-                "<InstanceID>0</InstanceID><CurrentURI>{}</CurrentURI><CurrentURIMetaData>{}</CurrentURIMetaData>",
-                escaped_current_uri, full_metadata_arg
-            )
+            set_args_primary
         };
-
-        let set_args_fallback = format!(
-            "<InstanceID>0</InstanceID><CurrentURI>{}</CurrentURI><CurrentURIMetaData>{}</CurrentURIMetaData>",
-            escaped_current_uri, empty_metadata_arg
-        );
 
         tracing::info!("[DLNA] SetAVTransportURI primary args: {}", set_args_primary);
 
