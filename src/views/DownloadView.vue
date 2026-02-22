@@ -341,7 +341,7 @@ watch([searchQuery, statusFilter, () => tasks.value], () => {
         <div class="flex items-center gap-3"><span class="text-sm font-semibold text-[#1a1a2e]">下载任务 ({{ filteredTasks.length }}/{{ tasks.length }})</span></div>
         <div class="flex items-center gap-2.5">
           <input type="text" v-model="searchQuery" placeholder="搜索任务名称" class="px-3 py-1.5 border border-[#e8e8e8] rounded-md text-[13px] w-[180px] transition-all focus:outline-none focus:border-[#667eea]" />
-          <select v-model="statusFilter" class="px-3 py-1.5 border border-[#e8e8e8] rounded-md text-[13px] bg-white cursor-pointer transition-all focus:outline-none focus:border-[#667eea]">
+          <select v-model="statusFilter" class="select-modern px-3 py-1.5 border border-[#e8e8e8] rounded-md text-[13px] bg-white cursor-pointer transition-all focus:outline-none focus:border-[#667eea]">
             <option value="">全部状态</option><option value="Pending">等待中</option><option value="Queued">已队列</option><option value="Downloading">下载中</option><option value="Paused">已暂停</option><option value="Completed">已完成</option><option value="Failed">失败</option><option value="Cancelled">已取消</option>
           </select>
           <button v-if="tasks.some(t => ['Completed', 'Failed', 'Cancelled'].includes(t.status))" @click="cleanupTasks" class="px-3 py-1 bg-transparent text-[#667eea] border border-[#667eea] rounded-md text-xs cursor-pointer transition-all hover:bg-[#667eea] hover:text-white">清理已完成</button>

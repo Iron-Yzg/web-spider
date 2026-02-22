@@ -158,7 +158,7 @@ function protocolLabel(protocol: string): string {
 
         <div class="video-info">
           <span class="label">协议:</span>
-          <select v-model="selectedProtocol" class="protocol-select">
+          <select v-model="selectedProtocol" class="protocol-select select-modern">
             <option value="sony">Sony 优先（推荐）</option>
             <option value="auto">自动</option>
             <option value="dlna">DLNA</option>

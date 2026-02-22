@@ -103,12 +103,6 @@ pub async fn start_remux_to_hls(
 
     let pid = child.id();
 
-    // 存储进程信息以便后续停止
-    if let Some(pid_value) = pid {
-        let mut pids = RUNNING_REMUX_PIDS.lock().await;
-        pids.insert(session_id.clone(), pid_value);
-    }
-
     // 等待 playlist 生成（解复用很快，通常2-5秒）
     let mut retries = 0;
     while retries < 20 {
@@ -151,42 +145,6 @@ pub async fn start_remux_to_hls(
 
     Err("解复用失败，可能需要转码".to_string())
 }
-
-/// 停止解复用
-pub async fn stop_remux(session_id: &str) -> Result<(), String> {
-    // 停止 HTTP 服务器
-    crate::services::hls_server::stop_hls_server(session_id).await.ok();
-
-    let mut pids = RUNNING_REMUX_PIDS.lock().await;
-    if let Some(pid) = pids.remove(session_id) {
-        tracing::info!("[remux] 停止解复用: {} (PID: {})", session_id, pid);
-
-        if cfg!(target_os = "windows") {
-            let _ = std::process::Command::new("taskkill")
-                .args(["/F", "/T", "/PID", &pid.to_string()])
-                .output();
-        } else {
-            let _ = std::process::Command::new("pkill")
-                .args(["-9", "-P", &pid.to_string()])
-                .output();
-            let _ = std::process::Command::new("kill")
-                .args(["-9", &pid.to_string()])
-                .output();
-        }
-    }
-
-    // 清理临时文件
-    let transcode_dir = std::env::temp_dir().join("web-spider-remux").join(session_id);
-    if transcode_dir.exists() {
-        let _ = tokio::fs::remove_dir_all(&transcode_dir).await;
-    }
-
-    Ok(())
-}
-
-/// 运行中的解复用进程
-static RUNNING_REMUX_PIDS: std::sync::LazyLock<tokio::sync::Mutex<std::collections::HashMap<String, u32>>> =
-    std::sync::LazyLock::new(|| tokio::sync::Mutex::new(std::collections::HashMap::new()));
 
 /// 启动视频播放（自动选择解复用或转码）
 pub async fn start_video_playback(

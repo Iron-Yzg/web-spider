@@ -4,6 +4,8 @@ use tokio::task;
 use tauri::{Emitter, State, WebviewWindow};
 use tauri_plugin_dialog::DialogExt;
 
+pub mod cast;
+
 use crate::db::{Database, PaginatedVideos};
 use crate::models::{
     AppConfig, DownloadProgress, LocalVideo, ScrapeResult, VideoItem, VideoStatus, Website,
@@ -903,17 +905,7 @@ pub async fn delete_local_video_db(db: State<'_, Database>, id: String) -> Resul
 
 // ==================== 视频转码命令 ====================
 
-use crate::services::{start_video_transcode_cmd, stop_video_transcode_cmd};
-
-#[tauri::command]
-pub async fn start_video_transcode(
-    app_handle: tauri::AppHandle,
-    file_path: String,
-    session_id: String,
-) -> Result<String, String> {
-    tracing::info!("[commands] 开始视频转码: session={}, path={}", session_id, file_path);
-    start_video_transcode_cmd(app_handle, file_path, session_id).await
-}
+use crate::services::stop_video_transcode_cmd;
 
 #[tauri::command]
 pub async fn stop_video_transcode(session_id: String) -> Result<(), String> {
@@ -923,7 +915,7 @@ pub async fn stop_video_transcode(session_id: String) -> Result<(), String> {
 
 // ==================== 视频解复用/播放命令 ====================
 
-use crate::services::{start_video_playback, stop_remux};
+use crate::services::start_video_playback;
 
 /// 启动视频播放（自动选择解复用或转码）
 #[tauri::command]
@@ -934,13 +926,6 @@ pub async fn start_video_playback_cmd(
 ) -> Result<(String, bool), String> {
     tracing::info!("[commands] 开始视频播放: session={}, path={}", session_id, file_path);
     start_video_playback(app_handle, file_path, session_id).await
-}
-
-/// 停止视频解复用
-#[tauri::command]
-pub async fn stop_video_remux(session_id: String) -> Result<(), String> {
-    tracing::info!("[commands] 停止视频解复用: session={}", session_id);
-    stop_remux(&session_id).await
 }
 
 /// 使用系统播放器打开视频文件
@@ -957,174 +942,4 @@ pub async fn open_with_system_player(app_handle: tauri::AppHandle, file_path: St
         .map_err(|e| format!("打开视频失败: {}", e))?;
     
     Ok(())
-}
-
-// ==================== DLNA 投屏命令 ====================
-
-use crate::services::DlnaService;
-use std::sync::Arc;
-use tokio::sync::Mutex;
-
-static DLNA_SERVICE: once_cell::sync::Lazy<Arc<Mutex<DlnaService>>> = 
-    once_cell::sync::Lazy::new(|| Arc::new(Mutex::new(DlnaService::new())));
-
-#[derive(serde::Serialize)]
-pub struct DlnaDeviceInfo {
-    pub name: String,
-    pub udn: String,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum CastProtocol {
-    Auto,
-    Sony,
-    Dlna,
-    Chromecast,
-    Airplay,
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct CastDeviceInfo {
-    pub id: String,
-    pub name: String,
-    pub protocol: String,
-    pub available: bool,
-    pub note: Option<String>,
-}
-
-fn is_sony_name(name: &str) -> bool {
-    let lower = name.to_lowercase();
-    lower.contains("sony") || lower.contains("bravia")
-}
-
-#[tauri::command]
-pub async fn discover_dlna_devices(timeout_secs: u64) -> Result<Vec<DlnaDeviceInfo>, String> {
-    let devices = DlnaService::discover_devices(timeout_secs).await?;
-    Ok(devices
-        .into_iter()
-        .map(|d| DlnaDeviceInfo {
-            name: d.name,
-            udn: d.udn,
-        })
-        .collect())
-}
-
-#[tauri::command]
-pub async fn discover_cast_devices(
-    protocol: CastProtocol,
-    timeout_secs: u64,
-) -> Result<Vec<CastDeviceInfo>, String> {
-    match protocol {
-        CastProtocol::Auto | CastProtocol::Sony | CastProtocol::Dlna => {
-            let mut devices = DlnaService::discover_devices(timeout_secs).await?;
-
-            if matches!(protocol, CastProtocol::Sony) {
-                devices.retain(|d| is_sony_name(&d.name));
-            }
-
-            // auto 模式优先把 Sony/BRAVIA 放在前面
-            if matches!(protocol, CastProtocol::Auto) {
-                devices.sort_by_key(|d| if is_sony_name(&d.name) { 0 } else { 1 });
-            }
-
-            Ok(devices
-                .into_iter()
-                .map(|d| {
-                    let sony = is_sony_name(&d.name);
-                    CastDeviceInfo {
-                        id: d.name.clone(),
-                        name: d.name,
-                        protocol: "dlna".to_string(),
-                        available: true,
-                        note: if sony {
-                            Some("Sony 推荐：已启用稳态参数".to_string())
-                        } else if matches!(protocol, CastProtocol::Auto) {
-                            Some("自动模式：非 Sony 设备使用通用 DLNA 参数".to_string())
-                        } else {
-                            None
-                        },
-                    }
-                })
-                .collect())
-        }
-        CastProtocol::Chromecast => Ok(vec![CastDeviceInfo {
-            id: "chromecast-not-implemented".to_string(),
-            name: "Chromecast (待实现)".to_string(),
-            protocol: "chromecast".to_string(),
-            available: false,
-            note: Some("当前版本优先稳定支持 Sony DLNA，Chromecast 通道预留中".to_string()),
-        }]),
-        CastProtocol::Airplay => Ok(vec![CastDeviceInfo {
-            id: "airplay-not-implemented".to_string(),
-            name: "AirPlay (待实现)".to_string(),
-            protocol: "airplay".to_string(),
-            available: false,
-            note: Some("当前版本优先稳定支持 Sony DLNA，AirPlay 通道预留中".to_string()),
-        }]),
-    }
-}
-
-#[tauri::command]
-pub async fn get_local_ip_address() -> Result<String, String> {
-    DlnaService::get_local_ip().await
-}
-
-#[tauri::command]
-pub async fn start_dlna_media_server(
-    file_path: String,
-    port: u16,
-) -> Result<String, String> {
-    let service = DLNA_SERVICE.lock().await;
-    service.start_media_server(file_path, port).await
-}
-
-#[tauri::command]
-pub async fn stop_dlna_media_server() -> Result<(), String> {
-    let service = DLNA_SERVICE.lock().await;
-    service.stop_media_server().await
-}
-
-#[tauri::command]
-pub async fn stop_dlna_playback(device_name: String) -> Result<(), String> {
-    let service = DLNA_SERVICE.lock().await;
-    service.stop_playback(device_name).await
-}
-
-#[tauri::command]
-pub async fn cast_to_dlna_device(
-    device_name: String,
-    video_url: String,
-    title: String,
-) -> Result<(), String> {
-    let service = DLNA_SERVICE.lock().await;
-    service.cast_to_device(device_name, video_url, title).await
-}
-
-#[tauri::command]
-pub async fn cast_media(
-    protocol: CastProtocol,
-    device_id: String,
-    video_url: String,
-    title: String,
-) -> Result<(), String> {
-    match protocol {
-        CastProtocol::Auto | CastProtocol::Sony | CastProtocol::Dlna => {
-            let service = DLNA_SERVICE.lock().await;
-            service.cast_to_device(device_id, video_url, title).await
-        }
-        CastProtocol::Chromecast => Err("Chromecast casting is not implemented yet in this build".to_string()),
-        CastProtocol::Airplay => Err("AirPlay casting is not implemented yet in this build".to_string()),
-    }
-}
-
-#[tauri::command]
-pub async fn stop_cast_playback(protocol: CastProtocol, device_id: String) -> Result<(), String> {
-    match protocol {
-        CastProtocol::Auto | CastProtocol::Sony | CastProtocol::Dlna => {
-            let service = DLNA_SERVICE.lock().await;
-            service.stop_playback(device_id).await
-        }
-        CastProtocol::Chromecast | CastProtocol::Airplay => Ok(()),
-    }
 }

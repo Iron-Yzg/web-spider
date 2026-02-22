@@ -15,7 +15,7 @@ import {
 } from '../services/api'
 
 // 设置分类
-type SettingSection = 'websites' | 'download' | 'ytdlp' | 'proxy' | 'ai'
+type SettingSection = 'websites' | 'ytdlp' | 'proxy' | 'ai'
 
 interface NavItem {
   id: SettingSection
@@ -25,8 +25,7 @@ interface NavItem {
 // 导航列表（无图标）
 const navItems: NavItem[] = [
   { id: 'websites', label: '网站设置' },
-  { id: 'download', label: '下载设置' },
-  { id: 'ytdlp', label: 'yt-dlp 设置' },
+  { id: 'ytdlp', label: '下载设置' },
   { id: 'proxy', label: '代理设置' },
   { id: 'ai', label: 'AI 设置' },
 ]
@@ -248,20 +247,6 @@ async function setDefaultWebsite(id: string) {
   }
 }
 
-// ========== 下载设置 ==========
-
-async function saveDownloadConfig() {
-  isSaving.value = true
-  try {
-    await updateConfig(config.value)
-    showSaveMessage('success', '配置已保存')
-  } catch (e) {
-    showSaveMessage('error', '保存失败: ' + e)
-  } finally {
-    isSaving.value = false
-  }
-}
-
 async function selectDownloadPath() {
   try {
     const selected = await open({
@@ -285,8 +270,9 @@ async function selectDownloadPath() {
 async function saveYtdlpConfig() {
   isSaving.value = true
   try {
+    await updateConfig({ download_path: config.value.download_path })
     await updateYtdlpConfig(ytdlpConfig.value)
-    showSaveMessage('success', 'yt-dlp 配置已保存')
+    showSaveMessage('success', '下载与 yt-dlp 配置已保存')
   } catch (e) {
     showSaveMessage('error', '保存失败: ' + e)
   } finally {
@@ -345,7 +331,6 @@ async function saveYtdlpConfig() {
         <!-- 网站设置 -->
         <div v-if="activeSection === 'websites'" class="w-full max-w-none">
           <div class="mb-4">
-            <h3 class="mb-1 mt-0 text-lg font-semibold text-[#1a1a2e]">网站设置</h3>
             <p class="m-0 text-[13px] text-[#94a3b8]">管理用于爬取视频的网站配置</p>
           </div>
 
@@ -463,7 +448,7 @@ async function saveYtdlpConfig() {
                 <label class="text-[13px] font-medium text-[#374151]">爬虫</label>
                 <select
                   v-model="websiteForm.spider"
-                  class="cursor-pointer rounded-md border border-[#e5e7eb] px-3 py-2.5 text-sm text-[#1a1a2e] transition-all hover:border-[#d1d5db] focus:border-[#667eea] focus:outline-none focus:shadow-[0_0_0_3px_rgba(102,126,234,0.1)]"
+                  class="select-modern cursor-pointer rounded-md border border-[#e5e7eb] px-3 py-2.5 text-sm text-[#1a1a2e] transition-all hover:border-[#d1d5db] focus:border-[#667eea] focus:outline-none focus:shadow-[0_0_0_3px_rgba(102,126,234,0.1)]"
                 >
                   <option v-for="scraper in scrapers" :key="scraper.id" :value="scraper.id">
                     {{ scraper.name }}
@@ -532,11 +517,10 @@ async function saveYtdlpConfig() {
           </div>
         </div>
 
-        <!-- 下载设置 -->
-        <div v-if="activeSection === 'download'" class="w-full max-w-none">
+        <!-- yt-dlp 设置 -->
+        <div v-if="activeSection === 'ytdlp'" class="w-full max-w-none">
           <div class="mb-4">
-            <h3 class="mb-1 mt-0 text-lg font-semibold text-[#1a1a2e]">下载设置</h3>
-            <p class="m-0 text-[13px] text-[#94a3b8]">配置 M3U8 视频下载相关的选项</p>
+            <p class="m-0 text-[13px] text-[#94a3b8]">配置 YouTube、B站等平台视频下载的默认选项</p>
           </div>
 
           <div class="box-border w-full rounded-[10px] border border-[#e5e7eb] bg-white p-4">
@@ -557,34 +541,14 @@ async function saveYtdlpConfig() {
                 </div>
               </div>
 
-              <div class="flex justify-end gap-3 border-t border-[#f0f0f0] pt-3">
-                <button
-                  @click="saveDownloadConfig"
-                  :disabled="isSaving"
-                  class="rounded-md border-none bg-[#667eea] px-5 py-2.5 text-sm font-medium text-white transition-all hover:bg-[#5a67d8] disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {{ isSaving ? '保存中...' : '保存配置' }}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+              <div class="my-1 h-px bg-[#f0f0f0]"></div>
 
-        <!-- yt-dlp 设置 -->
-        <div v-if="activeSection === 'ytdlp'" class="w-full max-w-none">
-          <div class="mb-4">
-            <h3 class="mb-1 mt-0 text-lg font-semibold text-[#1a1a2e]">yt-dlp 设置</h3>
-            <p class="m-0 text-[13px] text-[#94a3b8]">配置 YouTube、B站等平台视频下载的默认选项</p>
-          </div>
-
-          <div class="box-border w-full rounded-[10px] border border-[#e5e7eb] bg-white p-4">
-            <div class="flex flex-col gap-4">
               <div class="grid grid-cols-2 gap-4 max-[600px]:grid-cols-1">
                 <div class="flex flex-col gap-1.5">
                   <label class="text-[13px] font-medium text-[#374151]">视频质量</label>
                   <select
                     v-model="ytdlpConfig.quality"
-                    class="cursor-pointer rounded-md border border-[#e5e7eb] px-3 py-2.5 text-sm text-[#1a1a2e] transition-all hover:border-[#d1d5db] focus:border-[#667eea] focus:outline-none focus:shadow-[0_0_0_3px_rgba(102,126,234,0.1)]"
+                    class="select-modern cursor-pointer rounded-md border border-[#e5e7eb] px-3 py-2.5 text-sm text-[#1a1a2e] transition-all hover:border-[#d1d5db] focus:border-[#667eea] focus:outline-none focus:shadow-[0_0_0_3px_rgba(102,126,234,0.1)]"
                   >
                     <option :value="720">最佳质量</option>
                     <option :value="2160">4K (2160p)</option>
@@ -599,7 +563,7 @@ async function saveYtdlpConfig() {
                   <label class="text-[13px] font-medium text-[#374151]">视频格式</label>
                   <select
                     v-model="ytdlpConfig.format"
-                    class="cursor-pointer rounded-md border border-[#e5e7eb] px-3 py-2.5 text-sm text-[#1a1a2e] transition-all hover:border-[#d1d5db] focus:border-[#667eea] focus:outline-none focus:shadow-[0_0_0_3px_rgba(102,126,234,0.1)]"
+                    class="select-modern cursor-pointer rounded-md border border-[#e5e7eb] px-3 py-2.5 text-sm text-[#1a1a2e] transition-all hover:border-[#d1d5db] focus:border-[#667eea] focus:outline-none focus:shadow-[0_0_0_3px_rgba(102,126,234,0.1)]"
                   >
                     <option value="mp4">MP4</option>
                     <option value="webm">WebM</option>
@@ -611,7 +575,7 @@ async function saveYtdlpConfig() {
                   <label class="text-[13px] font-medium text-[#374151]">音频格式</label>
                   <select
                     v-model="ytdlpConfig.audio_format"
-                    class="cursor-pointer rounded-md border border-[#e5e7eb] px-3 py-2.5 text-sm text-[#1a1a2e] transition-all hover:border-[#d1d5db] focus:border-[#667eea] focus:outline-none focus:shadow-[0_0_0_3px_rgba(102,126,234,0.1)]"
+                    class="select-modern cursor-pointer rounded-md border border-[#e5e7eb] px-3 py-2.5 text-sm text-[#1a1a2e] transition-all hover:border-[#d1d5db] focus:border-[#667eea] focus:outline-none focus:shadow-[0_0_0_3px_rgba(102,126,234,0.1)]"
                   >
                     <option value="mp3">MP3</option>
                     <option value="m4a">M4A</option>
@@ -693,7 +657,6 @@ async function saveYtdlpConfig() {
         <!-- 代理设置 -->
         <div v-if="activeSection === 'proxy'" class="w-full max-w-none">
           <div class="mb-4">
-            <h3 class="mb-1 mt-0 text-lg font-semibold text-[#1a1a2e]">代理设置</h3>
             <p class="m-0 text-[13px] text-[#94a3b8]">配置网络代理以访问受限网站</p>
           </div>
 
@@ -711,7 +674,6 @@ async function saveYtdlpConfig() {
         <!-- AI 设置 -->
         <div v-if="activeSection === 'ai'" class="w-full max-w-none">
           <div class="mb-4">
-            <h3 class="mb-1 mt-0 text-lg font-semibold text-[#1a1a2e]">AI 设置</h3>
             <p class="m-0 text-[13px] text-[#94a3b8]">配置 AI 相关功能</p>
           </div>
 

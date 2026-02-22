@@ -172,22 +172,20 @@ pub fn run() {
             commands::add_local_video,
             commands::delete_local_video_db,
             // 视频转码命令
-            commands::start_video_transcode,
             commands::stop_video_transcode,
             // 视频解复用/播放命令
             commands::start_video_playback_cmd,
-            commands::stop_video_remux,
             commands::open_with_system_player,
             // DLNA 投屏命令
-            commands::discover_dlna_devices,
-            commands::get_local_ip_address,
-            commands::start_dlna_media_server,
-            commands::stop_dlna_media_server,
-            commands::stop_dlna_playback,
-            commands::cast_to_dlna_device,
-            commands::discover_cast_devices,
-            commands::cast_media,
-            commands::stop_cast_playback,
+            commands::cast::discover_dlna_devices,
+            commands::cast::get_local_ip_address,
+            commands::cast::start_dlna_media_server,
+            commands::cast::stop_dlna_media_server,
+            commands::cast::stop_dlna_playback,
+            commands::cast::cast_to_dlna_device,
+            commands::cast::discover_cast_devices,
+            commands::cast::cast_media,
+            commands::cast::stop_cast_playback,
         ]);
 
     builder

@@ -9,7 +9,7 @@ mod download;
 mod transcode;
 mod remux;
 mod hls_server;
-mod dlna;
+mod cast;
 
 // 重新导出 scraper 模块的内容
 pub use scraper::{
@@ -32,7 +32,6 @@ pub use download::{
 
 // 重新导出转码模块
 pub use transcode::{
-    start_video_transcode_cmd,
     stop_video_transcode_cmd,
     cleanup_all_transcodes,
 };
@@ -40,14 +39,20 @@ pub use transcode::{
 // 重新导出解复用模块
 pub use remux::{
     start_video_playback,
-    stop_remux,
 };
 
 // 重新导出 HLS 服务器模块（仅在内部使用）
 pub use hls_server::cleanup_all_hls_servers;
 
 // 重新导出 DLNA 模块
-pub use dlna::DlnaService;
+pub use cast::{
+    DlnaService,
+    CastProtocol,
+    CastDeviceInfo,
+    discover_cast_devices,
+    cast_media,
+    stop_cast_playback,
+};
 
 /// 使用 Tauri 2.x Sidecar API 获取 sidecar 的实际路径
 /// Tauri 会自动处理平台后缀，只需要提供基础名称

@@ -708,7 +708,7 @@ function handleImageError(event: Event) {
 <template>
   <div class="h-full flex flex-col bg-white rounded-xl shadow-[0_2px_12px_rgba(0,0,0,0.06)] overflow-hidden">
     <div class="flex gap-2.5 px-5 py-4 border-b border-[#f0f0f0] shrink-0">
-      <select v-model="selectedWebsite" :disabled="isScraping" class="px-3.5 py-2.5 border border-[#e8e8e8] rounded-lg text-sm bg-white cursor-pointer min-w-[140px] transition-all focus:outline-none focus:border-[#667eea] focus:shadow-[0_0_0_3px_rgba(102,126,234,0.1)] disabled:opacity-60 disabled:cursor-not-allowed disabled:bg-[#fafbfc]">
+      <select v-model="selectedWebsite" :disabled="isScraping" class="select-modern px-3.5 py-2.5 border border-[#e8e8e8] rounded-lg text-sm bg-white cursor-pointer min-w-[140px] transition-all focus:outline-none focus:border-[#667eea] focus:shadow-[0_0_0_3px_rgba(102,126,234,0.1)] disabled:opacity-60 disabled:cursor-not-allowed disabled:bg-[#fafbfc]">
         <option v-for="site in websites" :key="site.id" :value="site.id">{{ site.name }}</option>
       </select>
       <input type="text" v-model="videoId" placeholder="输入视频ID" @keyup.enter="scrape" :disabled="isScraping" class="flex-1 px-3.5 py-2.5 border border-[#e8e8e8] rounded-lg text-sm transition-all focus:outline-none focus:border-[#667eea] focus:shadow-[0_0_0_3px_rgba(102,126,234,0.1)]" />
@@ -728,7 +728,7 @@ function handleImageError(event: Event) {
         </div>
         <div class="flex items-center gap-2.5">
           <input type="text" v-model="searchQuery" @input="filterVideos" placeholder="搜索视频名称" class="px-3 py-1.5 border border-[#e8e8e8] rounded-md text-[13px] w-[180px] transition-all focus:outline-none focus:border-[#667eea]" />
-          <select v-model="statusFilter" @change="filterVideos" class="px-3 py-1.5 border border-[#e8e8e8] rounded-md text-[13px] bg-white cursor-pointer transition-all focus:outline-none focus:border-[#667eea]">
+          <select v-model="statusFilter" @change="filterVideos" class="select-modern px-3 py-1.5 border border-[#e8e8e8] rounded-md text-[13px] bg-white cursor-pointer transition-all focus:outline-none focus:border-[#667eea]">
             <option value="">全部状态</option>
             <option :value="VideoStatus.Pending">待爬取</option>
             <option :value="VideoStatus.Scraped">已爬取</option>
