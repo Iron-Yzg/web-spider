@@ -45,11 +45,12 @@ pub async fn get_local_ip_address() -> Result<String, String> {
 
 #[tauri::command]
 pub async fn start_dlna_media_server(
+    app_handle: tauri::AppHandle,
     file_path: String,
     port: u16,
 ) -> Result<String, String> {
     let service = DLNA_SERVICE.lock().await;
-    service.start_media_server(file_path, port).await
+    service.start_media_server_with_resolve(app_handle, file_path, port).await
 }
 
 #[tauri::command]

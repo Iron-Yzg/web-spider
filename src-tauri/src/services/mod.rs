@@ -25,6 +25,7 @@ pub use download::{
     download_video,
     check_ffmpeg,
     get_video_info,
+    get_cast_stream_url,
     cancel_task,
     get_all_tasks,
     cleanup_tasks,

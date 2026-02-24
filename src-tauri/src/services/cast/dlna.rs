@@ -6,6 +6,7 @@ use warp::Filter;
 
 use super::hls_proxy::{
     HlsProxyState,
+    proxy_media_handler_by_id,
     proxy_asset_handler,
     proxy_playlist_handler_by_id,
 };
@@ -75,6 +76,41 @@ impl DlnaService {
 
     fn is_playlist_url(url: &str) -> bool {
         url.to_lowercase().contains(".m3u8")
+    }
+
+    fn is_direct_stream_url(url: &str) -> bool {
+        let lower = url.to_lowercase();
+        lower.contains(".m3u8")
+            || lower.contains(".mp4")
+            || lower.contains(".mkv")
+            || lower.contains(".webm")
+            || lower.contains(".mov")
+            || lower.contains(".avi")
+            || lower.contains(".flv")
+            || lower.contains(".wmv")
+    }
+
+    async fn resolve_cast_source(
+        &self,
+        app_handle: &tauri::AppHandle,
+        source: String,
+    ) -> Result<String, String> {
+        let normalized = source.trim().replace("\\/", "/");
+        if Self::is_http_url(&normalized) && !Self::is_direct_stream_url(&normalized) {
+            tracing::info!("[DLNA] Detected page url, extracting stream via yt-dlp: {}", normalized);
+            return crate::services::get_cast_stream_url(app_handle, &normalized).await;
+        }
+        Ok(normalized)
+    }
+
+    pub async fn start_media_server_with_resolve(
+        &self,
+        app_handle: tauri::AppHandle,
+        source: String,
+        port: u16,
+    ) -> Result<String, String> {
+        let resolved = self.resolve_cast_source(&app_handle, source).await?;
+        self.start_media_server(resolved, port).await
     }
 
 
@@ -151,7 +187,8 @@ impl DlnaService {
 
         let host_ip = Self::get_local_ip().await?;
         let normalized = file_path.trim().replace("\\/", "/");
-        let is_remote_hls = Self::is_http_url(&normalized) && Self::is_playlist_url(&normalized);
+        let is_remote_http = Self::is_http_url(&normalized);
+        let is_remote_hls = is_remote_http && Self::is_playlist_url(&normalized);
         tracing::info!("[DLNA] Starting media server for source: {}", normalized);
 
         let bind_port = if port == 0 { 0 } else { port };
@@ -183,6 +220,20 @@ impl DlnaService {
                 id
             );
             start_url
+        } else if is_remote_http {
+            let id = uuid::Uuid::new_v4().to_string();
+            self.hls_proxy.insert_target(id.clone(), normalized.clone()).await;
+
+            let targets = self.hls_proxy.targets();
+            let media_route = warp::path!("proxy" / "media" / String)
+                .and(warp::any().map(move || targets.clone()))
+                .and_then(proxy_media_handler_by_id);
+
+            let (addr, server) = warp::serve(media_route).bind_ephemeral(bind_addr);
+            let handle = tokio::spawn(server);
+            *self.streaming_server.lock().await = Some(handle);
+
+            format!("http://{}:{}/proxy/media/{}", host_ip, addr.port(), id)
         } else {
             let path_buf = std::path::PathBuf::from(&normalized);
             let video_route = warp::path("video")

@@ -5,6 +5,7 @@ use tauri::{Emitter, State, WebviewWindow};
 use tauri_plugin_dialog::DialogExt;
 
 pub mod cast;
+pub mod player;
 
 use crate::db::{Database, PaginatedVideos};
 use crate::models::{
@@ -901,45 +902,4 @@ pub async fn add_local_video(db: State<'_, Database>, video: LocalVideo) -> Resu
 #[tauri::command]
 pub async fn delete_local_video_db(db: State<'_, Database>, id: String) -> Result<(), String> {
     db.delete_local_video(&id).await.map_err(|e| e.to_string())
-}
-
-// ==================== 视频转码命令 ====================
-
-use crate::services::stop_video_transcode_cmd;
-
-#[tauri::command]
-pub async fn stop_video_transcode(session_id: String) -> Result<(), String> {
-    tracing::info!("[commands] 停止视频转码: session={}", session_id);
-    stop_video_transcode_cmd(session_id).await
-}
-
-// ==================== 视频解复用/播放命令 ====================
-
-use crate::services::start_video_playback;
-
-/// 启动视频播放（自动选择解复用或转码）
-#[tauri::command]
-pub async fn start_video_playback_cmd(
-    app_handle: tauri::AppHandle,
-    file_path: String,
-    session_id: String,
-) -> Result<(String, bool), String> {
-    tracing::info!("[commands] 开始视频播放: session={}, path={}", session_id, file_path);
-    start_video_playback(app_handle, file_path, session_id).await
-}
-
-/// 使用系统播放器打开视频文件
-#[tauri::command]
-pub async fn open_with_system_player(app_handle: tauri::AppHandle, file_path: String) -> Result<(), String> {
-    use tauri_plugin_opener::OpenerExt;
-    
-    tracing::info!("[commands] 使用系统播放器打开: {}", file_path);
-    
-    // 使用 opener 插件打开文件
-    app_handle
-        .opener()
-        .open_path(&file_path, None::<&str>)
-        .map_err(|e| format!("打开视频失败: {}", e))?;
-    
-    Ok(())
 }

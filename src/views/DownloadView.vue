@@ -38,11 +38,12 @@ const showDlnaDialog = ref(false)
 const dlnaVideo = ref<LocalVideo | null>(null)
 
 function openDlnaDialog(task: YtdlpTask) {
-  if (!task.file_path) return
+  if (!task.file_path && !task.url) return
   dlnaVideo.value = {
     id: task.id,
     name: task.title,
-    file_path: task.file_path,
+    file_path: task.file_path || '',
+    m3u8_url: task.file_path ? undefined : task.url,
     file_size: '',
     duration: '',
     resolution: task.resolution || '',
@@ -384,13 +385,19 @@ watch([searchQuery, statusFilter, () => tasks.value], () => {
 
             <div class="w-[120px] flex items-center gap-1.5 shrink-0">
               <IconButton v-if="task.status === 'Downloading'" variant="stop" title="停止" @click="stopTask(task.id)" />
-              <IconButton v-else-if="canStart(task)" variant="start" title="开始" @click="startTask(task.id)" />
+              <template v-else-if="canStart(task)">
+                <IconButton variant="start" title="开始" @click="startTask(task.id)" />
+                <IconButton v-if="task.url" variant="cast" title="投屏" @click="openDlnaDialog(task)" />
+              </template>
               <template v-else-if="task.status === 'Completed' && task.file_path">
                 <IconButton variant="play" title="播放" @click="openPlayer(task)" />
                 <IconButton variant="folder" title="打开文件夹" @click="openFolder(task.file_path!)" />
                 <IconButton variant="cast" title="投屏" @click="openDlnaDialog(task)" />
               </template>
-              <IconButton v-else variant="delete" title="删除" @click="deleteTask(task.id)" />
+              <template v-else>
+                <IconButton v-if="task.url" variant="cast" title="投屏" @click="openDlnaDialog(task)" />
+                <IconButton variant="delete" title="删除" @click="deleteTask(task.id)" />
+              </template>
             </div>
           </div>
         </div>

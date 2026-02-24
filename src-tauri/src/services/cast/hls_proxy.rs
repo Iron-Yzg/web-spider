@@ -6,6 +6,31 @@ use tokio::sync::Mutex;
 use url::Url;
 use warp::http::StatusCode;
 
+fn infer_referer(url: &str) -> Option<&'static str> {
+    let lower = url.to_lowercase();
+    if lower.contains("bilibili.com") || lower.contains("bilivideo.com") || lower.contains("hdslb.com") {
+        Some("https://www.bilibili.com/")
+    } else {
+        None
+    }
+}
+
+fn browser_ua() -> &'static str {
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+}
+
+async fn fetch_with_headers(url: &str) -> Result<reqwest::Response, reqwest::Error> {
+    let client = reqwest::Client::builder().build()?;
+    let mut req = client
+        .get(url)
+        .header(reqwest::header::USER_AGENT, browser_ua());
+    if let Some(referer) = infer_referer(url) {
+        req = req.header(reqwest::header::REFERER, referer);
+        req = req.header(reqwest::header::ORIGIN, "https://www.bilibili.com");
+    }
+    req.send().await
+}
+
 #[derive(Default)]
 pub struct HlsProxyState {
     targets: Arc<Mutex<HashMap<String, String>>>,
@@ -129,7 +154,7 @@ pub async fn proxy_playlist_handler_by_id(
         ));
     };
 
-    let response = match reqwest::get(&target).await {
+    let response = match fetch_with_headers(&target).await {
         Ok(r) => r,
         Err(e) => {
             return Ok(make_text_response(
@@ -182,7 +207,7 @@ pub async fn proxy_asset_handler(query: HashMap<String, String>) -> Result<warp:
         Err(e) => return Ok(make_text_response(StatusCode::BAD_REQUEST, e)),
     };
 
-    let response = match reqwest::get(&target).await {
+    let response = match fetch_with_headers(&target).await {
         Ok(r) => r,
         Err(e) => {
             return Ok(make_text_response(
@@ -220,6 +245,69 @@ pub async fn proxy_asset_handler(query: HashMap<String, String>) -> Result<warp:
     let reply = warp::http::Response::builder()
         .status(StatusCode::OK)
         .header("Content-Type", content_type)
+        .header("Access-Control-Allow-Origin", "*")
+        .body(body.to_vec().into())
+        .unwrap_or_else(|_| warp::http::Response::new("internal error".into()));
+    Ok(reply)
+}
+
+pub async fn proxy_media_handler_by_id(
+    id: String,
+    targets: Arc<Mutex<HashMap<String, String>>>,
+) -> Result<warp::reply::Response, warp::Rejection> {
+    let target = {
+        let guard = targets.lock().await;
+        guard.get(&id).cloned()
+    };
+
+    let target = if let Some(t) = target {
+        t
+    } else {
+        return Ok(make_text_response(
+            StatusCode::NOT_FOUND,
+            format!("media id not found: {}", id),
+        ));
+    };
+
+    let response = match fetch_with_headers(&target).await {
+        Ok(r) => r,
+        Err(e) => {
+            return Ok(make_text_response(
+                StatusCode::BAD_GATEWAY,
+                format!("failed to fetch media: {}", e),
+            ))
+        }
+    };
+
+    let status = response.status();
+    if !status.is_success() {
+        return Ok(make_text_response(
+            StatusCode::BAD_GATEWAY,
+            format!("upstream media status: {}", status),
+        ));
+    }
+
+    let content_type = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("video/mp4")
+        .to_string();
+
+    let body = match response.bytes().await {
+        Ok(v) => v,
+        Err(e) => {
+            return Ok(make_text_response(
+                StatusCode::BAD_GATEWAY,
+                format!("failed to read media body: {}", e),
+            ))
+        }
+    };
+
+    let reply = warp::http::Response::builder()
+        .status(StatusCode::OK)
+        .header("Content-Type", content_type)
+        .header("Accept-Ranges", "bytes")
         .header("Access-Control-Allow-Origin", "*")
         .body(body.to_vec().into())
         .unwrap_or_else(|_| warp::http::Response::new("internal error".into()));

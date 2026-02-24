@@ -167,6 +167,67 @@ pub fn detect_url_type(url: &str) -> UrlType {
     UrlType::Platform
 }
 
+pub async fn get_cast_stream_url(app_handle: &AppHandle, input_url: &str) -> Result<String, String> {
+    let url = decode_url(input_url);
+    if detect_url_type(&url) != UrlType::Platform {
+        return Ok(url);
+    }
+
+    let ytdlp_path = get_sidecar_path(app_handle, "yt-dlp")?;
+
+    let primary_args = vec![
+        "-g".to_string(),
+        "--no-playlist".to_string(),
+        "-f".to_string(),
+        "b[ext=mp4]/bv*[ext=mp4]+ba[ext=m4a]/b".to_string(),
+        "--cookies-from-browser".to_string(),
+        "chrome".to_string(),
+        url.clone(),
+    ];
+
+    let output = Command::new(&ytdlp_path)
+        .args(&primary_args)
+        .output()
+        .await
+        .map_err(|e| format!("执行 yt-dlp 获取直链失败: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let mut lines: Vec<String> = stdout
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| l.starts_with("http://") || l.starts_with("https://"))
+        .collect();
+
+    if lines.is_empty() {
+        let fallback_args = vec![
+            "-g".to_string(),
+            "--no-playlist".to_string(),
+            "-f".to_string(),
+            "b".to_string(),
+            url.clone(),
+        ];
+        let fallback = Command::new(&ytdlp_path)
+            .args(&fallback_args)
+            .output()
+            .await
+            .map_err(|e| format!("执行 yt-dlp fallback 获取直链失败: {}", e))?;
+        let fb_stdout = String::from_utf8_lossy(&fallback.stdout).to_string();
+        lines = fb_stdout
+            .lines()
+            .map(|l| l.trim().to_string())
+            .filter(|l| l.starts_with("http://") || l.starts_with("https://"))
+            .collect();
+    }
+
+    if let Some(first) = lines.first() {
+        tracing::info!("[ytdlp-cast] 解析到可投屏直链: {}", first);
+        Ok(first.clone())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(format!("未解析到可用视频直链，yt-dlp 输出: {}", stderr))
+    }
+}
+
 /// 检查 ffmpeg 是否可用
 pub fn check_ffmpeg(app_handle: &AppHandle) -> bool {
     match get_sidecar_path(app_handle, "ffmpeg") {

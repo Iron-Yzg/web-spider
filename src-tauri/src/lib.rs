@@ -172,10 +172,10 @@ pub fn run() {
             commands::add_local_video,
             commands::delete_local_video_db,
             // 视频转码命令
-            commands::stop_video_transcode,
+            commands::player::stop_video_transcode,
             // 视频解复用/播放命令
-            commands::start_video_playback_cmd,
-            commands::open_with_system_player,
+            commands::player::start_video_playback_cmd,
+            commands::player::open_with_system_player,
             // DLNA 投屏命令
             commands::cast::discover_dlna_devices,
             commands::cast::get_local_ip_address,
