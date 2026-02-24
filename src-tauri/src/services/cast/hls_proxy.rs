@@ -31,6 +31,21 @@ async fn fetch_with_headers(url: &str) -> Result<reqwest::Response, reqwest::Err
     req.send().await
 }
 
+async fn fetch_with_headers_and_range(url: &str, range: Option<&str>) -> Result<reqwest::Response, reqwest::Error> {
+    let client = reqwest::Client::builder().build()?;
+    let mut req = client
+        .get(url)
+        .header(reqwest::header::USER_AGENT, browser_ua());
+    if let Some(referer) = infer_referer(url) {
+        req = req.header(reqwest::header::REFERER, referer);
+        req = req.header(reqwest::header::ORIGIN, "https://www.bilibili.com");
+    }
+    if let Some(r) = range {
+        req = req.header(reqwest::header::RANGE, r);
+    }
+    req.send().await
+}
+
 #[derive(Default)]
 pub struct HlsProxyState {
     targets: Arc<Mutex<HashMap<String, String>>>,
@@ -71,11 +86,12 @@ fn decode_from_query(input: &str) -> Result<String, String> {
         .map_err(|e| format!("Invalid encoded url: {}", e))
 }
 
-fn to_proxy_path(target: &str) -> String {
+fn to_proxy_path(target: &str, host: Option<&str>) -> String {
+    let prefix = host.map(|h| format!("http://{}", h)).unwrap_or_default();
     if is_playlist_url(target) {
-        format!("/hls/playlist?u={}", encode_for_query(target))
+        format!("{}/hls/playlist?u={}", prefix, encode_for_query(target))
     } else {
-        format!("/hls/asset?u={}", encode_for_query(target))
+        format!("{}/hls/asset?u={}", prefix, encode_for_query(target))
     }
 }
 
@@ -85,7 +101,7 @@ fn resolve_url(base: &str, rel: &str) -> Option<String> {
     Some(joined.to_string())
 }
 
-fn rewrite_tag_uri(line: &str, playlist_url: &str) -> String {
+fn rewrite_tag_uri(line: &str, playlist_url: &str, host: Option<&str>) -> String {
     let needle = "URI=\"";
     if let Some(start) = line.find(needle) {
         let value_start = start + needle.len();
@@ -93,7 +109,7 @@ fn rewrite_tag_uri(line: &str, playlist_url: &str) -> String {
             let value_end = value_start + end_rel;
             let raw = &line[value_start..value_end];
             if let Some(abs) = resolve_url(playlist_url, raw) {
-                let proxied = to_proxy_path(&abs);
+                let proxied = to_proxy_path(&abs, host);
                 return format!("{}{}{}", &line[..value_start], proxied, &line[value_end..]);
             }
         }
@@ -101,7 +117,7 @@ fn rewrite_tag_uri(line: &str, playlist_url: &str) -> String {
     line.to_string()
 }
 
-fn rewrite_playlist_content(playlist_url: &str, content: &str) -> String {
+fn rewrite_playlist_content(playlist_url: &str, content: &str, host: Option<&str>) -> String {
     let mut out = Vec::new();
     for line in content.lines() {
         let trimmed = line.trim();
@@ -111,7 +127,7 @@ fn rewrite_playlist_content(playlist_url: &str, content: &str) -> String {
         }
         if trimmed.starts_with('#') {
             if trimmed.contains("URI=\"") {
-                out.push(rewrite_tag_uri(line, playlist_url));
+                out.push(rewrite_tag_uri(line, playlist_url, host));
             } else {
                 out.push(line.to_string());
             }
@@ -119,7 +135,7 @@ fn rewrite_playlist_content(playlist_url: &str, content: &str) -> String {
         }
 
         if let Some(abs) = resolve_url(playlist_url, trimmed) {
-            out.push(to_proxy_path(&abs));
+            out.push(to_proxy_path(&abs, host));
         } else {
             out.push(line.to_string());
         }
@@ -138,6 +154,7 @@ fn make_text_response(status: StatusCode, body: String) -> warp::reply::Response
 pub async fn proxy_playlist_handler_by_id(
     id_raw: String,
     targets: Arc<Mutex<HashMap<String, String>>>,
+    host: Option<String>,
 ) -> Result<warp::reply::Response, warp::Rejection> {
     let id = id_raw.strip_suffix(".m3u8").unwrap_or(&id_raw).to_string();
     let target = {
@@ -182,7 +199,7 @@ pub async fn proxy_playlist_handler_by_id(
         }
     };
 
-    let rewritten = rewrite_playlist_content(&target, &text);
+    let rewritten = rewrite_playlist_content(&target, &text, host.as_deref());
     let reply = warp::http::Response::builder()
         .status(StatusCode::OK)
         .header("Content-Type", "application/vnd.apple.mpegurl")
@@ -192,7 +209,10 @@ pub async fn proxy_playlist_handler_by_id(
     Ok(reply)
 }
 
-pub async fn proxy_asset_handler(query: HashMap<String, String>) -> Result<warp::reply::Response, warp::Rejection> {
+pub async fn proxy_asset_handler(
+    query: HashMap<String, String>,
+    range: Option<String>,
+) -> Result<warp::reply::Response, warp::Rejection> {
     let encoded = if let Some(u) = query.get("u") {
         u
     } else {
@@ -207,7 +227,7 @@ pub async fn proxy_asset_handler(query: HashMap<String, String>) -> Result<warp:
         Err(e) => return Ok(make_text_response(StatusCode::BAD_REQUEST, e)),
     };
 
-    let response = match fetch_with_headers(&target).await {
+    let response = match fetch_with_headers_and_range(&target, range.as_deref()).await {
         Ok(r) => r,
         Err(e) => {
             return Ok(make_text_response(
@@ -225,12 +245,23 @@ pub async fn proxy_asset_handler(query: HashMap<String, String>) -> Result<warp:
         ));
     }
 
+    let status = response.status();
     let content_type = response
         .headers()
         .get(reqwest::header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
         .unwrap_or("application/octet-stream")
         .to_string();
+    let content_range = response
+        .headers()
+        .get(reqwest::header::CONTENT_RANGE)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+    let content_length = response
+        .headers()
+        .get(reqwest::header::CONTENT_LENGTH)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
 
     let body = match response.bytes().await {
         Ok(v) => v,
@@ -242,10 +273,19 @@ pub async fn proxy_asset_handler(query: HashMap<String, String>) -> Result<warp:
         }
     };
 
-    let reply = warp::http::Response::builder()
-        .status(StatusCode::OK)
+    let mut builder = warp::http::Response::builder()
+        .status(status)
         .header("Content-Type", content_type)
+        .header("Accept-Ranges", "bytes")
         .header("Access-Control-Allow-Origin", "*")
+        .header("TransferMode.DLNA.ORG", "Streaming");
+    if let Some(cr) = content_range {
+        builder = builder.header("Content-Range", cr);
+    }
+    if let Some(cl) = content_length {
+        builder = builder.header("Content-Length", cl);
+    }
+    let reply = builder
         .body(body.to_vec().into())
         .unwrap_or_else(|_| warp::http::Response::new("internal error".into()));
     Ok(reply)
@@ -254,6 +294,7 @@ pub async fn proxy_asset_handler(query: HashMap<String, String>) -> Result<warp:
 pub async fn proxy_media_handler_by_id(
     id: String,
     targets: Arc<Mutex<HashMap<String, String>>>,
+    range: Option<String>,
 ) -> Result<warp::reply::Response, warp::Rejection> {
     let target = {
         let guard = targets.lock().await;
@@ -269,7 +310,7 @@ pub async fn proxy_media_handler_by_id(
         ));
     };
 
-    let response = match fetch_with_headers(&target).await {
+    let response = match fetch_with_headers_and_range(&target, range.as_deref()).await {
         Ok(r) => r,
         Err(e) => {
             return Ok(make_text_response(
@@ -287,12 +328,23 @@ pub async fn proxy_media_handler_by_id(
         ));
     }
 
+    let status = response.status();
     let content_type = response
         .headers()
         .get(reqwest::header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
         .unwrap_or("video/mp4")
         .to_string();
+    let content_range = response
+        .headers()
+        .get(reqwest::header::CONTENT_RANGE)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+    let content_length = response
+        .headers()
+        .get(reqwest::header::CONTENT_LENGTH)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
 
     let body = match response.bytes().await {
         Ok(v) => v,
@@ -304,11 +356,19 @@ pub async fn proxy_media_handler_by_id(
         }
     };
 
-    let reply = warp::http::Response::builder()
-        .status(StatusCode::OK)
+    let mut builder = warp::http::Response::builder()
+        .status(status)
         .header("Content-Type", content_type)
         .header("Accept-Ranges", "bytes")
         .header("Access-Control-Allow-Origin", "*")
+        .header("TransferMode.DLNA.ORG", "Streaming");
+    if let Some(cr) = content_range {
+        builder = builder.header("Content-Range", cr);
+    }
+    if let Some(cl) = content_length {
+        builder = builder.header("Content-Length", cl);
+    }
+    let reply = builder
         .body(body.to_vec().into())
         .unwrap_or_else(|_| warp::http::Response::new("internal error".into()));
     Ok(reply)
