@@ -386,7 +386,7 @@ watch([searchQuery, statusFilter, () => tasks.value], () => {
             <div class="w-[120px] flex items-center gap-1.5 shrink-0">
               <IconButton v-if="task.status === 'Downloading'" variant="stop" title="停止" @click="stopTask(task.id)" />
               <template v-else-if="canStart(task)">
-                <IconButton variant="start" title="开始" @click="startTask(task.id)" />
+                <IconButton variant="download" title="开始下载" @click="startTask(task.id)" />
                 <IconButton v-if="task.url" variant="cast" title="投屏" @click="openDlnaDialog(task)" />
               </template>
               <template v-else-if="task.status === 'Completed' && task.file_path">

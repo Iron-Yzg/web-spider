@@ -701,6 +701,12 @@ pub async fn get_video_info(
     let args = vec![
         "--dump-json".to_string(),
         "--no-download".to_string(),
+        "--no-playlist".to_string(),
+        "--cookies-from-browser".to_string(),
+        "chrome".to_string(),
+        "--impersonate".to_string(),
+        "chrome".to_string(),
+        "--no-check-certificate".to_string(),
         "-f".to_string(),
         build_format_string(quality),
         url.to_string(),
@@ -712,10 +718,34 @@ pub async fn get_video_info(
         .await
         .map_err(|e| format!("获取视频信息失败: {}", e))?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("获取视频信息失败: {}", stderr));
-    }
+    // 某些站点（如 X）对格式约束很敏感，失败时做一次无 -f 的兜底
+    let output = if output.status.success() {
+        output
+    } else {
+        let fallback_args = vec![
+            "--dump-json".to_string(),
+            "--no-download".to_string(),
+            "--no-playlist".to_string(),
+            "--cookies-from-browser".to_string(),
+            "chrome".to_string(),
+            "--impersonate".to_string(),
+            "chrome".to_string(),
+            "--no-check-certificate".to_string(),
+            url.to_string(),
+        ];
+
+        let fb = Command::new(&ytdlp_path)
+            .args(&fallback_args)
+            .output()
+            .await
+            .map_err(|e| format!("获取视频信息失败: {}", e))?;
+
+        if !fb.status.success() {
+            let stderr = String::from_utf8_lossy(&fb.stderr);
+            return Err(format!("获取视频信息失败: {}", stderr));
+        }
+        fb
+    };
 
     let json_str = String::from_utf8_lossy(&output.stdout);
     let json: serde_json::Value = serde_json::from_str(&json_str)
