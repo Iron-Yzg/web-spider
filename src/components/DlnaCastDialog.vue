@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import type { LocalVideo } from '../types'
 import type { CastDevice, CastProtocol } from '../services/api'
 import { 
@@ -31,20 +31,47 @@ const castDeviceName = ref<string | null>(null)
 const selectedProtocol = ref<CastProtocol>('sony')
 const managedServer = ref(false)
 
-onMounted(async () => {
-  await handleStartServer()
-  await handleDiscover()
-})
+const DEVICE_CACHE_KEY = 'cast.devices.cache.v1'
+const SELECTED_DEVICE_KEY = 'cast.selected.device.v1'
+const SELECTED_PROTOCOL_KEY = 'cast.selected.protocol.v1'
 
-watch(selectedProtocol, async () => {
-  await handleDiscover()
+onMounted(async () => {
+  const cachedProtocol = localStorage.getItem(SELECTED_PROTOCOL_KEY) as CastProtocol | null
+  if (cachedProtocol) {
+    selectedProtocol.value = cachedProtocol
+  }
+
+  const cachedSelectedDevice = localStorage.getItem(SELECTED_DEVICE_KEY)
+  if (cachedSelectedDevice) {
+    selectedDevice.value = cachedSelectedDevice
+  }
+
+  const cacheRaw = localStorage.getItem(DEVICE_CACHE_KEY)
+  if (cacheRaw) {
+    try {
+      const cachedDevices = JSON.parse(cacheRaw) as CastDevice[]
+      if (Array.isArray(cachedDevices) && cachedDevices.length > 0) {
+        devices.value = cachedDevices
+        if (selectedDevice.value && !cachedDevices.some(d => d.id === selectedDevice.value && d.available)) {
+          selectedDevice.value = null
+        }
+        statusMessage.value = `使用缓存设备列表（${cachedDevices.length}）`
+      }
+    } catch {
+      localStorage.removeItem(DEVICE_CACHE_KEY)
+    }
+  }
+
+  await handleStartServer()
+  if (devices.value.length === 0) {
+    await handleDiscover()
+  }
 })
 
 async function handleDiscover() {
   isDiscovering.value = true
   statusMessage.value = '正在搜索设备...'
   devices.value = []
-  selectedDevice.value = null
   
   try {
     const [ip, foundDevices] = await Promise.all([
@@ -53,10 +80,24 @@ async function handleDiscover() {
     ])
     localIp.value = ip
     devices.value = foundDevices
+
+    localStorage.setItem(SELECTED_PROTOCOL_KEY, selectedProtocol.value)
+    localStorage.setItem(DEVICE_CACHE_KEY, JSON.stringify(foundDevices))
+
+    if (selectedDevice.value && !foundDevices.some(d => d.id === selectedDevice.value && d.available)) {
+      selectedDevice.value = null
+    }
     
     if (foundDevices.length === 0) {
       statusMessage.value = '未发现可用设备'
     } else {
+      if (!selectedDevice.value) {
+        const firstAvailable = foundDevices.find(d => d.available)
+        if (firstAvailable) {
+          selectedDevice.value = firstAvailable.id
+          localStorage.setItem(SELECTED_DEVICE_KEY, firstAvailable.id)
+        }
+      }
       statusMessage.value = `发现 ${foundDevices.length} 个设备`
     }
   } catch (e) {
@@ -106,6 +147,8 @@ async function handleCast() {
   
   try {
     castDeviceName.value = selectedDevice.value
+    localStorage.setItem(SELECTED_DEVICE_KEY, selectedDevice.value)
+    localStorage.setItem(SELECTED_PROTOCOL_KEY, selectedProtocol.value)
     await castMedia(selectedProtocol.value, selectedDevice.value, serverUrl.value, props.video.name)
     statusMessage.value = '已发送播放命令，请查看电视'
   } catch (e) {
