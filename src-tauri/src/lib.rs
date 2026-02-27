@@ -186,6 +186,7 @@ pub fn run() {
             commands::cast::discover_cast_devices,
             commands::cast::cast_media,
             commands::cast::stop_cast_playback,
+            commands::cast::create_cast_remote_session,
         ]);
 
     builder

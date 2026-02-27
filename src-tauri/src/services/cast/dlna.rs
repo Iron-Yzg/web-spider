@@ -478,6 +478,32 @@ impl DlnaService {
         Ok(())
     }
 
+    pub async fn pause_playback(&self, device_name: String) -> Result<(), String> {
+        tracing::info!("[DLNA] Pause playback on device: {}", device_name);
+        let render = Self::resolve_render(&device_name, 5).await?;
+        let service = &render.service;
+        let device_url = render.device.url();
+        let pause_args = "<InstanceID>0</InstanceID>";
+        service
+            .action(device_url, "Pause", pause_args)
+            .await
+            .map_err(|e| format!("Pause command failed: {:?}", e))?;
+        Ok(())
+    }
+
+    pub async fn resume_playback(&self, device_name: String) -> Result<(), String> {
+        tracing::info!("[DLNA] Resume playback on device: {}", device_name);
+        let render = Self::resolve_render(&device_name, 5).await?;
+        let service = &render.service;
+        let device_url = render.device.url();
+        let play_args = "<InstanceID>0</InstanceID><Speed>1</Speed>";
+        service
+            .action(device_url, "Play", play_args)
+            .await
+            .map_err(|e| format!("Resume command failed: {:?}", e))?;
+        Ok(())
+    }
+
     pub async fn cast_to_device(
         &self,
         device_name: String,

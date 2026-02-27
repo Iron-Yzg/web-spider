@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import QRCode from 'qrcode'
 import type { LocalVideo } from '../types'
-import type { CastDevice, CastProtocol } from '../services/api'
+import type { CastDevice, CastProtocol, CastPlaylistItem } from '../services/api'
 import { 
   discoverCastDevices,
   castMedia,
   stopCastPlayback,
+  createCastRemoteSession,
   getLocalIpAddress,
   startDlnaMediaServer,
   stopDlnaMediaServer,
@@ -13,6 +15,8 @@ import {
 
 const props = defineProps<{
   video: LocalVideo
+  playlist?: LocalVideo[]
+  currentIndex?: number
 }>()
 
 const emit = defineEmits<{
@@ -30,6 +34,9 @@ const selectedDevice = ref<string | null>(null)
 const castDeviceName = ref<string | null>(null)
 const selectedProtocol = ref<CastProtocol>('sony')
 const managedServer = ref(false)
+const remoteUrl = ref('')
+const remoteQrDataUrl = ref('')
+const isCreatingRemote = ref(false)
 
 const DEVICE_CACHE_KEY = 'cast.devices.cache.v1'
 const SELECTED_DEVICE_KEY = 'cast.selected.device.v1'
@@ -111,6 +118,10 @@ const isLocalVideo = computed(() => {
   return props.video.file_path && props.video.file_path.length > 0
 })
 
+const statusIsError = computed(() => {
+  return statusMessage.value.includes('失败') || statusMessage.value.includes('错误')
+})
+
 async function handleStartServer() {
   if (!props.video) return
   
@@ -123,7 +134,7 @@ async function handleStartServer() {
     if (!source) {
       throw new Error('未找到可投屏的视频地址')
     }
-    const url = await startDlnaMediaServer(source, 8080)
+    const url = await startDlnaMediaServer(source, 0)
     managedServer.value = true
     serverUrl.value = url
     statusMessage.value = isLocalVideo.value
@@ -158,6 +169,63 @@ async function handleCast() {
   }
 }
 
+const remotePlaylistItems = computed<CastPlaylistItem[]>(() => {
+  const list = props.playlist && props.playlist.length > 0 ? props.playlist : [props.video]
+  return list
+    .map(item => {
+      const source = (item.file_path && item.file_path.trim().length > 0)
+        ? item.file_path
+        : (item.m3u8_url || '')
+      if (!source) return null
+      return {
+        id: item.id,
+        title: item.name,
+        source,
+      }
+    })
+    .filter((item): item is CastPlaylistItem => item !== null)
+})
+
+const remoteCurrentIndex = computed(() => {
+  if (remotePlaylistItems.value.length === 0) return 0
+  const idx = remotePlaylistItems.value.findIndex(item => item.id === props.video.id)
+  if (idx >= 0) return idx
+  if (typeof props.currentIndex === 'number' && props.currentIndex >= 0 && props.currentIndex < remotePlaylistItems.value.length) {
+    return props.currentIndex
+  }
+  return 0
+})
+
+async function handleCreateRemoteQr() {
+  if (!selectedDevice.value) {
+    statusMessage.value = '请先选择投屏设备'
+    return
+  }
+  if (remotePlaylistItems.value.length === 0) {
+    statusMessage.value = '当前列表没有可投屏的视频'
+    return
+  }
+
+  isCreatingRemote.value = true
+  try {
+    const url = await createCastRemoteSession(
+      selectedDevice.value,
+      remotePlaylistItems.value,
+      remoteCurrentIndex.value,
+    )
+    remoteUrl.value = url
+    remoteQrDataUrl.value = await QRCode.toDataURL(url, {
+      width: 180,
+      margin: 1,
+      color: { dark: '#1a1a2e', light: '#ffffff' },
+    })
+  } catch (e) {
+    statusMessage.value = `生成遥控二维码失败: ${e}`
+  } finally {
+    isCreatingRemote.value = false
+  }
+}
+
 async function handleClose() {
   // 异步停止电视播放
   if (castDeviceName.value) {
@@ -181,86 +249,109 @@ function protocolLabel(protocol: string): string {
 </script>
 
 <template>
-  <div class="dlna-overlay">
-    <div class="dlna-dialog">
-      <div class="dlna-header">
-        <h3>一键投屏</h3>
-        <button class="close-btn" @click="handleClose">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+  <div class="fixed inset-0 z-[1000] flex items-center justify-center bg-black/55 p-4">
+    <div class="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+      <div class="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+        <div>
+          <h3 class="text-base font-semibold text-slate-900">一键投屏</h3>
+          <p class="mt-0.5 line-clamp-1 text-xs text-slate-500">{{ video.name }}</p>
+        </div>
+        <button class="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800" @click="handleClose">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="18" y1="6" x2="6" y2="18"></line>
             <line x1="6" y1="6" x2="18" y2="18"></line>
           </svg>
         </button>
       </div>
-      
-      <div class="dlna-content">
-        <div class="video-info">
-          <span class="label">投屏视频:</span>
-          <span class="value">{{ video.name }}</span>
-        </div>
 
-        <div class="video-info">
-          <span class="label">协议:</span>
-          <select v-model="selectedProtocol" class="protocol-select select-modern">
+      <div class="flex-1 space-y-3 overflow-y-auto px-4 py-3">
+        <div class="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto]">
+          <select
+            v-model="selectedProtocol"
+            class="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+          >
             <option value="sony">Sony 优先（推荐）</option>
             <option value="auto">自动</option>
             <option value="dlna">DLNA</option>
             <option value="chromecast">Chromecast（实验）</option>
             <option value="airplay">AirPlay（实验）</option>
           </select>
-        </div>
-        
-        <div class="action-row">
-          <button 
-            @click="handleDiscover" 
+          <button
+            class="inline-flex h-10 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-medium text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+            @click="handleDiscover"
             :disabled="isDiscovering"
-            class="action-btn"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="10"></circle>
-              <line x1="12" y1="8" x2="12" y2="12"></line>
-              <line x1="12" y1="16" x2="12.01" y2="16"></line>
-            </svg>
             {{ isDiscovering ? '搜索中...' : '刷新设备' }}
           </button>
         </div>
-        
-        <div v-if="serverUrl" class="server-info">
-          <span class="label">{{ isLocalVideo ? '服务器地址:' : '视频地址:' }}</span>
-          <code>{{ serverUrl }}</code>
-        </div>
-        
-        <div v-if="devices.length > 0" class="device-list">
-          <span class="label">选择投屏设备:</span>
-          <div class="devices">
-            <button 
-              v-for="device in devices" 
+
+        <div v-if="devices.length > 0" class="rounded-xl border border-slate-200 bg-slate-50/60 p-2">
+          <div class="mb-2 px-1 text-xs font-medium text-slate-500">选择投屏设备</div>
+          <div class="grid max-h-48 grid-cols-1 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
+            <button
+              v-for="device in devices"
               :key="device.id"
-              :class="['device-item', { selected: selectedDevice === device.id, unavailable: !device.available }]"
+              class="rounded-xl border px-3 py-2 text-left transition"
+              :class="[
+                selectedDevice === device.id
+                  ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                  : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300',
+                !device.available ? 'cursor-not-allowed opacity-60' : ''
+              ]"
               @click="device.available ? selectedDevice = device.id : null"
             >
-              <span class="device-main">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <rect x="2" y="7" width="20" height="15" rx="2" ry="2"></rect>
-                  <polyline points="17 2 12 7 7 2"></polyline>
-                </svg>
-                <span>{{ device.name }}</span>
-              </span>
-              <small class="proto">{{ protocolLabel(device.protocol) }}</small>
-              <small v-if="device.note" class="note">{{ device.note }}</small>
+              <div class="line-clamp-1 text-sm font-medium">{{ device.name }}</div>
+              <div class="mt-1 text-xs text-slate-500">
+                {{ protocolLabel(device.protocol) }}
+                <span v-if="device.note"> · {{ device.note }}</span>
+              </div>
             </button>
           </div>
         </div>
-        
-        <div v-if="statusMessage" :class="['status-message', { error: statusMessage.includes('失败') || statusMessage.includes('错误') }]">
+
+        <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <button
+            class="inline-flex h-10 items-center justify-center rounded-xl border border-indigo-200 bg-indigo-50 px-3 text-sm font-medium text-indigo-700 transition hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-60"
+            @click="handleCreateRemoteQr"
+            :disabled="isCreatingRemote || !selectedDevice"
+          >
+            {{ isCreatingRemote ? '生成中...' : '手机遥控' }}
+          </button>
+          <div class="flex items-center rounded-xl border border-slate-200 px-3 text-xs text-slate-500">
+            {{ isLocalVideo ? '本地文件投屏' : '网络视频投屏' }}
+          </div>
+        </div>
+
+        <div v-if="remoteQrDataUrl" class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <div class="flex flex-col items-center gap-2 sm:flex-row sm:items-start">
+            <img :src="remoteQrDataUrl" alt="手机遥控二维码" class="h-36 w-36 rounded-lg border border-slate-200 bg-white" />
+            <div class="min-w-0 flex-1">
+              <p class="text-xs leading-5 text-slate-600">手机和电脑在同一局域网，扫码后可在手机上切换视频。</p>
+              <code class="mt-2 block break-all rounded-md border border-slate-200 bg-white p-2 text-[11px] text-indigo-700">{{ remoteUrl }}</code>
+            </div>
+          </div>
+        </div>
+
+        <details v-if="serverUrl" class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
+          <summary class="cursor-pointer select-none">查看 {{ isLocalVideo ? '媒体服务地址' : '视频地址' }}</summary>
+          <code class="mt-2 block break-all text-[11px] text-emerald-700">{{ serverUrl }}</code>
+        </details>
+
+        <div
+          v-if="statusMessage"
+          class="rounded-xl px-3 py-2 text-xs"
+          :class="statusIsError ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'"
+        >
           {{ statusMessage }}
         </div>
       </div>
-      
-      <div class="dlna-footer">
-        <button class="cancel-btn" @click="handleClose">关闭</button>
-        <button 
-          class="cast-btn" 
+
+      <div class="grid grid-cols-2 gap-2 border-t border-slate-200 px-4 py-3">
+        <button class="h-10 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-600 transition hover:bg-slate-50" @click="handleClose">
+          关闭
+        </button>
+        <button
+          class="h-10 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-500 text-sm font-medium text-white transition hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60"
           @click="handleCast"
           :disabled="!selectedDevice || !serverUrl || isCasting"
         >
@@ -270,280 +361,3 @@ function protocolLabel(protocol: string): string {
     </div>
   </div>
 </template>
-
-<style scoped>
-.dlna-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
-.dlna-dialog {
-  background: white;
-  border-radius: 12px;
-  width: 90%;
-  max-width: 480px;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.15);
-}
-
-.dlna-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 16px 20px;
-  border-bottom: 1px solid #f0f0f0;
-}
-
-.dlna-header h3 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-  color: #1a1a2e;
-}
-
-.close-btn {
-  background: none;
-  border: none;
-  padding: 4px;
-  cursor: pointer;
-  color: #64748b;
-  border-radius: 4px;
-}
-
-.close-btn:hover {
-  background: #f1f5f9;
-  color: #1a1a2e;
-}
-
-.dlna-content {
-  padding: 20px;
-}
-
-.video-info {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 16px;
-  font-size: 14px;
-}
-
-.video-info .label {
-  color: #64748b;
-}
-
-.video-info .value {
-  color: #1a1a2e;
-  font-weight: 500;
-}
-
-.protocol-select {
-  border: 1px solid #e8e8e8;
-  border-radius: 6px;
-  padding: 6px 10px;
-  font-size: 13px;
-  color: #1a1a2e;
-  background: #fff;
-}
-
-.action-row {
-  display: flex;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.action-btn {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 10px 16px;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  background: white;
-  font-size: 13px;
-  font-weight: 500;
-  color: #64748b;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.action-btn:hover:not(:disabled) {
-  border-color: #cbd5e1;
-  background: #f8fafc;
-}
-
-.action-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.action-btn.primary {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border: none;
-  color: white;
-}
-
-.action-btn.primary:hover:not(:disabled) {
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.35);
-}
-
-.action-btn.danger {
-  background: #fee2e2;
-  border: none;
-  color: #dc2626;
-}
-
-.action-btn.danger:hover:not(:disabled) {
-  background: #fecaca;
-}
-
-.server-info {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 16px;
-  font-size: 13px;
-}
-
-.server-info .label {
-  color: #64748b;
-}
-
-.server-info code {
-  background: #f1f5f9;
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-family: monospace;
-  font-size: 12px;
-  color: #059669;
-}
-
-.device-list {
-  margin-bottom: 16px;
-}
-
-.device-list .label {
-  display: block;
-  font-size: 13px;
-  color: #64748b;
-  margin-bottom: 8px;
-}
-
-.devices {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.device-item {
-  display: flex;
-  align-items: flex-start;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px 12px;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  background: white;
-  font-size: 13px;
-  color: #64748b;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.device-main {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.device-item:hover {
-  border-color: #cbd5e1;
-}
-
-.device-item.selected {
-  border-color: #667eea;
-  background: #f0f5ff;
-  color: #667eea;
-}
-
-.device-item.unavailable {
-  opacity: 0.65;
-  cursor: not-allowed;
-}
-
-.proto {
-  font-size: 11px;
-  color: #6366f1;
-}
-
-.note {
-  font-size: 11px;
-  color: #94a3b8;
-}
-
-.status-message {
-  padding: 10px;
-  border-radius: 8px;
-  background: #f0fdf4;
-  color: #059669;
-  font-size: 13px;
-  text-align: center;
-}
-
-.status-message.error {
-  background: #fef2f2;
-  color: #dc2626;
-}
-
-.dlna-footer {
-  display: flex;
-  gap: 12px;
-  padding: 16px 20px;
-  border-top: 1px solid #f0f0f0;
-}
-
-.cancel-btn {
-  flex: 1;
-  padding: 10px;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  background: white;
-  font-size: 14px;
-  color: #64748b;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.cancel-btn:hover {
-  background: #f8fafc;
-}
-
-.cast-btn {
-  flex: 1;
-  padding: 10px;
-  border: none;
-  border-radius: 8px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  font-size: 14px;
-  font-weight: 500;
-  color: white;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.cast-btn:hover:not(:disabled) {
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.35);
-}
-
-.cast-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-</style>

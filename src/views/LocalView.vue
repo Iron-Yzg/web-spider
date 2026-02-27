@@ -20,9 +20,14 @@ const selectDialog = ref<{ visible: boolean, message: string, onConfirm: (() => 
 // DLNA 投屏弹窗
 const showDlnaDialog = ref(false)
 const dlnaVideo = ref<LocalVideo | null>(null)
+const dlnaPlaylist = ref<LocalVideo[]>([])
+const dlnaCurrentIndex = ref(0)
 
 function openDlnaDialog(video: LocalVideo) {
   dlnaVideo.value = video
+  dlnaPlaylist.value = filteredVideos.value
+  const idx = filteredVideos.value.findIndex(v => v.id === video.id)
+  dlnaCurrentIndex.value = idx >= 0 ? idx : 0
   showDlnaDialog.value = true
 }
 
@@ -385,7 +390,7 @@ onMounted(async () => {
 
     <VideoPlayer :visible="playerVisible" :src="playerSrc" :title="playerTitle" :playlist="playerPlaylist" :current-index="currentVideoIndex" video-id="" @close="handlePlayerClose" @play-next="handlePlayNext" @delete-current="handleDeleteCurrent" />
 
-    <DlnaCastDialog v-if="dlnaVideo" :video="dlnaVideo" @close="closeDlnaDialog" />
+    <DlnaCastDialog v-if="dlnaVideo" :video="dlnaVideo" :playlist="dlnaPlaylist" :current-index="dlnaCurrentIndex" @close="closeDlnaDialog" />
   </div>
 </template>
 

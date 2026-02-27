@@ -157,6 +157,12 @@ export interface CastDevice {
   note?: string | null
 }
 
+export interface CastPlaylistItem {
+  id: string
+  title: string
+  source: string
+}
+
 export async function discoverDlnaDevices(timeoutSecs = 5): Promise<DlnaDevice[]> {
   return await invoke<DlnaDevice[]>('discover_dlna_devices', { timeoutSecs })
 }
@@ -191,4 +197,16 @@ export async function castMedia(protocol: CastProtocol, deviceId: string, videoU
 
 export async function stopCastPlayback(protocol: CastProtocol, deviceId: string): Promise<void> {
   await invoke('stop_cast_playback', { protocol, deviceId })
+}
+
+export async function createCastRemoteSession(
+  deviceId: string,
+  items: CastPlaylistItem[],
+  currentIndex = 0,
+): Promise<string> {
+  return await invoke<string>('create_cast_remote_session', {
+    deviceId,
+    items,
+    currentIndex,
+  })
 }

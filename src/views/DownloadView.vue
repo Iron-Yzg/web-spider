@@ -36,6 +36,8 @@ const showAddDialog = ref(false)
 // DLNA 投屏弹窗
 const showDlnaDialog = ref(false)
 const dlnaVideo = ref<LocalVideo | null>(null)
+const dlnaPlaylist = ref<LocalVideo[]>([])
+const dlnaCurrentIndex = ref(0)
 
 function openDlnaDialog(task: YtdlpTask) {
   if (!task.file_path && !task.url) return
@@ -49,6 +51,20 @@ function openDlnaDialog(task: YtdlpTask) {
     resolution: task.resolution || '',
     added_at: '',
   }
+  dlnaPlaylist.value = filteredTasks.value
+    .filter(t => !!t.file_path || !!t.url)
+    .map(t => ({
+      id: t.id,
+      name: t.title,
+      file_path: t.file_path || '',
+      m3u8_url: t.file_path ? undefined : t.url,
+      file_size: '',
+      duration: '',
+      resolution: t.resolution || '',
+      added_at: '',
+    }))
+  const idx = dlnaPlaylist.value.findIndex(v => v.id === task.id)
+  dlnaCurrentIndex.value = idx >= 0 ? idx : 0
   showDlnaDialog.value = true
 }
 
@@ -406,7 +422,7 @@ watch([searchQuery, statusFilter, () => tasks.value], () => {
 
     <AddTaskDialog :visible="showAddDialog" @close="closeAddDialog" @confirm="handleAddTasks" />
     <VideoPlayer v-show="playerVisible" :visible="playerVisible" :src="playerSrc" :title="playerTitle" :playlist="playerPlaylist" :current-index="currentVideoIndex" @close="handlePlayerClose" @play-next="handlePlayNext" @delete-current="handleDeleteCurrent" />
-    <DlnaCastDialog v-if="dlnaVideo" :video="dlnaVideo" @close="closeDlnaDialog" />
+    <DlnaCastDialog v-if="dlnaVideo" :video="dlnaVideo" :playlist="dlnaPlaylist" :current-index="dlnaCurrentIndex" @close="closeDlnaDialog" />
   </div>
 </template>
 
