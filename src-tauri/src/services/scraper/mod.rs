@@ -36,6 +36,7 @@ pub enum AnyScraper {
     D1(D1Spider),
     D2(D2Spider),
     Srl(SrlSpider),
+    Nine(NineSpider),
 }
 
 impl AnyScraper {
@@ -44,6 +45,7 @@ impl AnyScraper {
             AnyScraper::D1(scraper) => scraper.id(),
             AnyScraper::D2(scraper) => scraper.id(),
             AnyScraper::Srl(scraper) => scraper.id(),
+            AnyScraper::Nine(scraper) => scraper.id(),
         }
     }
 }
@@ -62,6 +64,7 @@ impl Scraper for AnyScraper {
             AnyScraper::D1(scraper) => scraper.scrape(video_id, log_callback),
             AnyScraper::D2(scraper) => scraper.scrape(video_id, log_callback),
             AnyScraper::Srl(scraper) => scraper.scrape(video_id, log_callback),
+            AnyScraper::Nine(scraper) => scraper.scrape(video_id, log_callback),
         }
     }
 
@@ -77,6 +80,7 @@ impl Scraper for AnyScraper {
             AnyScraper::D1(scraper) => scraper.scrape_all(video_id, log_callback),
             AnyScraper::D2(scraper) => scraper.scrape_all(video_id, log_callback),
             AnyScraper::Srl(scraper) => scraper.scrape_all(video_id, log_callback),
+            AnyScraper::Nine(scraper) => scraper.scrape_all(video_id, log_callback),
         }
     }
 }
@@ -96,6 +100,10 @@ pub fn get_available_scrapers() -> Vec<ScraperInfo> {
             id: "srl".to_string(),
             name: "SRL Wiki".to_string(),
         },
+        ScraperInfo {
+            id: "nine".to_string(),
+            name: "91吃瓜".to_string(),
+        },
     ]
 }
 
@@ -109,6 +117,7 @@ impl ScraperFactory {
             "d1" => AnyScraper::D1(D1Spider::new(website)),
             "d2" => AnyScraper::D2(D2Spider::new(website)),
             "srl" => AnyScraper::Srl(SrlSpider::new(website)),
+            "nine" => AnyScraper::Nine(NineSpider::new(website)),
             _ => panic!("未知的爬虫: {}", website.spider),
         }
     }
@@ -125,3 +134,6 @@ pub use d2_spider::D2Spider;
 // SRL 爬虫实现
 mod srl_spider;
 pub use srl_spider::SrlSpider;
+// 91 爬虫实现
+mod nine_spider;
+pub use nine_spider::NineSpider;

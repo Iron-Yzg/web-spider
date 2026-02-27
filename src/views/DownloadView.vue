@@ -412,8 +412,8 @@ watch([searchQuery, statusFilter, () => tasks.value], () => {
               </template>
               <template v-else>
                 <IconButton v-if="task.url" variant="cast" title="投屏" @click="openDlnaDialog(task)" />
-                <IconButton variant="delete" title="删除" @click="deleteTask(task.id)" />
               </template>
+              <IconButton variant="delete" title="删除" @click="deleteTask(task.id)" />
             </div>
           </div>
         </div>
