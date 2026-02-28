@@ -58,6 +58,11 @@ const isCreating = ref(false)
 // 需要转码的格式
 const TRANSCODE_FORMATS = ['.mkv', '.avi', '.flv', '.wmv', '.rm', '.rmvb', '.ts', '.mpeg', '.mpg']
 
+function resetPlaybackState() {
+  error.value = null
+  transcodingProgress.value = 0
+}
+
 function normalizeMediaPath(input: string): string {
   let value = input.trim()
   value = value.replace(/\\\//g, '/')
@@ -208,6 +213,8 @@ async function getFileInfo(filePath: string): Promise<{ size: number; isLarge: b
 async function createPlayer() {
   if (!containerRef.value || !props.src) return
 
+  resetPlaybackState()
+
   console.log('[VideoPlayer] 创建播放器:', props.src)
 
   // 销毁旧的
@@ -298,6 +305,7 @@ async function createPlayer() {
     
     hls.on(Hls.Events.MANIFEST_PARSED, () => {
       console.log('[VideoPlayer] HLS manifest 加载完成')
+      error.value = null
     })
     
     hls.on(Hls.Events.ERROR, (_event, data) => {
@@ -323,6 +331,11 @@ async function createPlayer() {
   // 事件监听
   art.on('ready', () => {
     console.log('[VideoPlayer] 播放器就绪')
+    error.value = null
+  })
+
+  art.video.addEventListener('playing', () => {
+    error.value = null
   })
   
   art.on('error', (err) => {
@@ -358,6 +371,7 @@ function destroyPlayer() {
   }
   // 停止转码
   stopTranscoding()
+  resetPlaybackState()
 }
 
 // 关闭播放器
@@ -369,6 +383,7 @@ function handleClose() {
 // 播放下一个
 function handlePlayNext() {
   if (hasNextVideo.value) {
+    resetPlaybackState()
     emit('playNext', props.currentIndex + 1)
   }
 }
@@ -397,6 +412,7 @@ watch(() => props.visible, async (visible) => {
     if (isCreating.value) return
     isCreating.value = true
     try {
+      resetPlaybackState()
       initPlayerPosition()
       await nextTick()
       await new Promise(resolve => setTimeout(resolve, 100))
@@ -415,6 +431,7 @@ watch(() => props.src, async (newSrc) => {
     if (isCreating.value) return
     isCreating.value = true
     try {
+      resetPlaybackState()
       await nextTick()
       await new Promise(resolve => setTimeout(resolve, 100))
       await createPlayer()
