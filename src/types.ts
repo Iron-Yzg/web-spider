@@ -132,6 +132,74 @@ export interface YtdlpResult {
   message: string
 }
 
+// ==================== 嗅探相关类型 ====================
+
+// 嗅探到的媒体资源
+export interface SniffedMedia {
+  url: string
+  media_type: string  // video, audio, hls, dash, stream
+  file_ext: string    // mp4, m3u8, flv 等
+  size: number | null
+  source: string      // dom, network, script, iframe, player
+}
+
+// 嗅探结果
+export interface SniffResult {
+  page_url: string
+  page_title: string
+  media_list: SniffedMedia[]
+  success: boolean
+  message: string
+}
+
+// 嗅探记录（数据库持久化）
+export interface SniffedMediaRecord {
+  id: string
+  page_url: string
+  page_title: string
+  url: string
+  media_type: string
+  file_ext: string
+  size: number | null
+  source: string
+  sniffed_at: string
+}
+
+// ==================== 格式转换相关类型 ====================
+
+// 转换状态
+export enum ConvertStatus {
+  Pending = 'Pending',
+  Converting = 'Converting',
+  Completed = 'Completed',
+  Failed = 'Failed',
+}
+
+// 转换任务
+export interface ConvertTask {
+  id: string
+  input_path: string
+  output_path: string
+  output_format: string
+  progress: number
+  status: ConvertStatus
+  message: string
+}
+
+// 转换选项
+export interface ConvertOptions {
+  format: string
+  video_codec?: string
+  audio_codec?: string
+  resolution?: string
+  video_bitrate?: number
+  audio_bitrate?: number
+  fps?: number
+  audio_only: boolean
+  start_time?: number
+  end_time?: number
+}
+
 // 本地视频
 export interface LocalVideo {
   id: string

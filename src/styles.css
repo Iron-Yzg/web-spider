@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* 使用 class 控制深色模式 (在 html 元素上添加 dark class) */
+@custom-variant dark (&:is(.dark *));
+
 /* Custom theme configuration for the project */
 @theme {
   /* Primary colors */
@@ -61,6 +64,12 @@
     height: 100vh;
     overflow: hidden;
   }
+
+  /* ============ Dark Mode ============ */
+  html.dark body {
+    background-color: #0f172a;
+    color: #e2e8f0;
+  }
 }
 
 /* Custom utilities */
@@ -107,5 +116,24 @@
     background-size: 5px 5px, 5px 5px;
     background-repeat: no-repeat;
     padding-right: 32px;
+  }
+
+  /* Dark mode select */
+  html.dark .select-modern {
+    background-color: #1e293b;
+    color: #e2e8f0;
+  }
+}
+
+/* ============ Dark Mode Overrides ============ */
+@layer base {
+  /* Dark mode transitions */
+  html {
+    transition: background-color 0.2s ease, color 0.2s ease;
+  }
+
+  /* Dark mode for common elements */
+  html.dark {
+    color-scheme: dark;
   }
 }

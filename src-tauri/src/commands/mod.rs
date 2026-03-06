@@ -5,7 +5,9 @@ use tauri::{Emitter, State, WebviewWindow};
 use tauri_plugin_dialog::DialogExt;
 
 pub mod cast;
+pub mod converter;
 pub mod player;
+pub mod sniffer;
 
 use crate::db::{Database, PaginatedVideos};
 use crate::models::{

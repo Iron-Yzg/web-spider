@@ -187,6 +187,17 @@ pub fn run() {
             commands::cast::cast_media,
             commands::cast::stop_cast_playback,
             commands::cast::create_cast_remote_session,
+            // 嗅探命令
+            commands::sniffer::sniff_media,
+            commands::sniffer::get_sniffed_records,
+            commands::sniffer::delete_sniffed_record,
+            commands::sniffer::clear_sniffed_records,
+            // 格式转换命令
+            commands::converter::start_convert,
+            commands::converter::stop_convert,
+            commands::converter::screenshot_video,
+            commands::converter::select_convert_input,
+            commands::converter::select_convert_output,
         ]);
 
     builder

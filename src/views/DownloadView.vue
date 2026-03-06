@@ -352,13 +352,13 @@ watch([searchQuery, statusFilter, () => tasks.value], () => {
 </script>
 
 <template>
-  <div class="h-full flex flex-col bg-white rounded-xl shadow-[0_2px_12px_rgba(0,0,0,0.06)] overflow-hidden">
+  <div class="h-full flex flex-col bg-white dark:bg-gray-900 rounded-xl shadow-[0_2px_12px_rgba(0,0,0,0.06)] overflow-hidden">
     <div class="flex-1 flex flex-col overflow-hidden">
-      <div class="flex justify-between items-center px-5 py-3 bg-[#fafbfc] border-b border-[#f0f0f0] shrink-0">
-        <div class="flex items-center gap-3"><span class="text-sm font-semibold text-[#1a1a2e]">下载任务 ({{ filteredTasks.length }}/{{ tasks.length }})</span></div>
+      <div class="flex justify-between items-center px-5 py-3 bg-[#fafbfc] dark:bg-gray-800 border-b border-[#f0f0f0] dark:border-gray-700 shrink-0">
+        <div class="flex items-center gap-3"><span class="text-sm font-semibold text-[#1a1a2e] dark:text-gray-200">下载任务 ({{ filteredTasks.length }}/{{ tasks.length }})</span></div>
         <div class="flex items-center gap-2.5">
-          <input type="text" v-model="searchQuery" placeholder="搜索任务名称" class="px-3 py-1.5 border border-[#e8e8e8] rounded-md text-[13px] w-[180px] transition-all focus:outline-none focus:border-[#667eea]" />
-          <select v-model="statusFilter" class="select-modern px-3 py-1.5 border border-[#e8e8e8] rounded-md text-[13px] bg-white cursor-pointer transition-all focus:outline-none focus:border-[#667eea]">
+          <input type="text" v-model="searchQuery" placeholder="搜索任务名称" class="px-3 py-1.5 border border-[#e8e8e8] dark:border-gray-600 rounded-md text-[13px] w-[180px] dark:bg-gray-800 dark:text-gray-200 transition-all focus:outline-none focus:border-[#667eea]" />
+          <select v-model="statusFilter" class="select-modern px-3 py-1.5 border border-[#e8e8e8] dark:border-gray-600 rounded-md text-[13px] bg-white dark:bg-gray-800 dark:text-gray-200 cursor-pointer transition-all focus:outline-none focus:border-[#667eea]">
             <option value="">全部状态</option><option value="Pending">等待中</option><option value="Queued">已队列</option><option value="Downloading">下载中</option><option value="Paused">已暂停</option><option value="Completed">已完成</option><option value="Failed">失败</option><option value="Cancelled">已取消</option>
           </select>
           <button v-if="tasks.some(t => ['Completed', 'Failed', 'Cancelled'].includes(t.status))" @click="cleanupTasks" class="px-3 py-1 bg-transparent text-[#667eea] border border-[#667eea] rounded-md text-xs cursor-pointer transition-all hover:bg-[#667eea] hover:text-white">清理已完成</button>
@@ -367,28 +367,28 @@ watch([searchQuery, statusFilter, () => tasks.value], () => {
       </div>
 
       <div v-if="tasks.length === 0" class="flex-1 flex flex-col items-center justify-center p-[60px] text-center">
-        <div class="text-[#334155] mb-4"><svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg></div>
+        <div class="text-[#334155] dark:text-gray-400 mb-4"><svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg></div>
         <p class="text-base text-[#64748b] mb-5">暂无下载任务</p>
         <button @click="openAddDialog" class="px-6 py-2.5 border-none rounded-lg text-sm text-white cursor-pointer bg-[linear-gradient(135deg,#6366f1_0%,#8b5cf6_100%)] disabled:opacity-50 disabled:cursor-not-allowed" :disabled="!ytdlpAvailable">添加下载</button>
       </div>
 
       <div v-else class="flex-1 flex flex-col overflow-hidden">
-        <div class="flex px-5 py-2.5 bg-[#f8f9fa] border-b border-[#eee] text-xs font-semibold text-[#64748b] uppercase tracking-[0.5px] items-center">
+        <div class="flex px-5 py-2.5 bg-[#f8f9fa] dark:bg-gray-800/50 border-b border-[#eee] dark:border-gray-700 text-xs font-semibold text-[#64748b] dark:text-gray-400 uppercase tracking-[0.5px] items-center">
           <span class="w-[60px] mr-3">封面</span><span class="flex-1 min-w-0 pr-4">名称</span><span class="w-[120px] pr-4">状态</span><span class="w-[120px] shrink-0">操作</span>
         </div>
 
         <div class="flex-1 overflow-y-auto">
           <div v-if="filteredTasks.length === 0" class="py-10 px-5 text-center text-[#94a3b8] text-[13px]">没有找到匹配的任务</div>
 
-          <div v-for="task in filteredTasks" :key="task.id" class="flex items-center px-5 py-3 border-b border-[#f5f5f5] transition-colors hover:bg-[#fafbfc]" :class="{ 'bg-[#f0f9ff]': task.status === 'Downloading' }">
+          <div v-for="task in filteredTasks" :key="task.id" class="flex items-center px-5 py-3 border-b border-[#f5f5f5] dark:border-gray-800 transition-colors hover:bg-[#fafbfc] dark:hover:bg-gray-800/50" :class="{ 'bg-[#f0f9ff] dark:bg-blue-900/10': task.status === 'Downloading' }">
             <div class="w-[60px] h-[34px] mr-3 relative overflow-hidden rounded bg-[#f5f5f5] shrink-0">
               <video v-if="task.status === 'Completed' && task.file_path" :ref="el => videoRefs[task.id] = el as HTMLVideoElement" :src="convertFileSrc(task.file_path)" class="w-full h-full object-cover bg-black" muted preload="auto" @loadeddata="handleVideoLoaded(task.id)"></video>
               <div v-else class="w-full h-full flex items-center justify-center bg-[#f8f9fa] text-[#cbd5e1]"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line></svg></div>
             </div>
 
             <div class="flex-1 min-w-0 pr-4">
-              <span class="block text-sm font-medium text-[#1a1a2e] whitespace-nowrap overflow-hidden text-ellipsis" :title="task.title">{{ task.title || '未知标题' }}</span>
-              <span class="block mt-0.5 text-[11px] text-[#94a3b8] font-mono whitespace-nowrap overflow-hidden text-ellipsis" :title="task.url">{{ task.url }}</span>
+              <span class="block text-sm font-medium text-[#1a1a2e] dark:text-gray-200 whitespace-nowrap overflow-hidden text-ellipsis" :title="task.title">{{ task.title || '未知标题' }}</span>
+              <span class="block mt-0.5 text-[11px] text-[#94a3b8] dark:text-gray-500 font-mono whitespace-nowrap overflow-hidden text-ellipsis" :title="task.url">{{ task.url }}</span>
               <div v-if="task.status === 'Downloading'" class="mt-1 flex gap-3 text-[11px]"><span class="text-[#16a34a] font-semibold">{{ Math.round(task.progress) }}%</span><span v-if="task.speed" class="text-[#64748b]">{{ task.speed }}</span></div>
               <div v-if="task.status === 'Completed' && task.file_path" class="mt-1"><span class="text-[11px] text-[#64748b] font-mono bg-[#f8f9fa] px-1.5 py-0.5 rounded">{{ task.file_path }}</span></div>
             </div>

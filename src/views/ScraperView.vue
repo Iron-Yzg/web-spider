@@ -96,33 +96,44 @@ const dlnaVideo = ref<LocalVideo | null>(null)
 const dlnaPlaylist = ref<LocalVideo[]>([])
 const dlnaCurrentIndex = ref(0)
 
-function openDlnaDialog(video: VideoItem) {
+async function openDlnaDialog(video: VideoItem) {
   // 优先使用本地文件，其次使用网络地址
   if (!video.file_path && !video.m3u8_url) {
     return // 没有视频地址，无法投屏
   }
+
+  const currentM3u8 = video.m3u8_url
+    ? await replaceVideoToken(video, video.m3u8_url)
+    : ''
+
   dlnaVideo.value = {
     id: video.id,
     name: video.name,
     file_path: video.file_path || '',  // 本地文件优先
-    m3u8_url: video.m3u8_url || '',   // 网络地址作为备选
+    m3u8_url: currentM3u8 || '',   // 网络地址作为备选（已替换 token）
     file_size: '',
     duration: '',
     resolution: '',
     added_at: '',
   }
-  dlnaPlaylist.value = filteredVideos.value
-    .filter(v => !!v.file_path || !!v.m3u8_url)
-    .map(v => ({
-      id: v.id,
-      name: v.name,
-      file_path: v.file_path || '',
-      m3u8_url: v.m3u8_url || undefined,
-      file_size: '',
-      duration: '',
-      resolution: '',
-      added_at: '',
-    }))
+
+  const playableVideos = filteredVideos.value.filter(v => !!v.file_path || !!v.m3u8_url)
+  dlnaPlaylist.value = await Promise.all(
+    playableVideos.map(async (v) => {
+      const replacedM3u8 = v.m3u8_url ? await replaceVideoToken(v, v.m3u8_url) : undefined
+      return {
+        id: v.id,
+        name: v.name,
+        file_path: v.file_path || '',
+        m3u8_url: replacedM3u8,
+        file_size: '',
+        duration: '',
+        resolution: '',
+        added_at: '',
+      }
+    })
+  )
+
   const idx = dlnaPlaylist.value.findIndex(v => v.id === video.id)
   dlnaCurrentIndex.value = idx >= 0 ? idx : 0
   showDlnaDialog.value = true
@@ -722,36 +733,36 @@ function handleImageError(event: Event) {
 </script>
 
 <template>
-  <div class="h-full flex flex-col bg-white rounded-xl shadow-[0_2px_12px_rgba(0,0,0,0.06)] overflow-hidden">
-    <div class="flex gap-2.5 px-5 py-4 border-b border-[#f0f0f0] shrink-0">
-      <select v-model="selectedWebsite" :disabled="isScraping" class="select-modern px-3.5 py-2.5 border border-[#e8e8e8] rounded-lg text-sm bg-white cursor-pointer min-w-[140px] transition-all focus:outline-none focus:border-[#667eea] focus:shadow-[0_0_0_3px_rgba(102,126,234,0.1)] disabled:opacity-60 disabled:cursor-not-allowed disabled:bg-[#fafbfc]">
+  <div class="h-full flex flex-col bg-white dark:bg-gray-900 rounded-xl shadow-[0_2px_12px_rgba(0,0,0,0.06)] overflow-hidden">
+    <div class="flex gap-2.5 px-5 py-4 border-b border-[#f0f0f0] dark:border-gray-700 shrink-0 flex-wrap">
+      <select v-model="selectedWebsite" :disabled="isScraping" class="select-modern px-3.5 py-2.5 border border-[#e8e8e8] dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800 dark:text-gray-200 cursor-pointer min-w-[140px] transition-all focus:outline-none focus:border-[#667eea] focus:shadow-[0_0_0_3px_rgba(102,126,234,0.1)] disabled:opacity-60 disabled:cursor-not-allowed disabled:bg-[#fafbfc]">
         <option v-for="site in websites" :key="site.id" :value="site.id">{{ site.name }}</option>
       </select>
-      <input type="text" v-model="videoId" placeholder="输入视频ID" @keyup.enter="scrape" :disabled="isScraping" class="flex-1 px-3.5 py-2.5 border border-[#e8e8e8] rounded-lg text-sm transition-all focus:outline-none focus:border-[#667eea] focus:shadow-[0_0_0_3px_rgba(102,126,234,0.1)]" />
+      <input type="text" v-model="searchQuery" @input="filterVideos" placeholder="搜索视频名称" class="w-[180px] px-3.5 py-2.5 border border-[#e8e8e8] dark:border-gray-600 rounded-lg text-sm dark:bg-gray-800 dark:text-gray-200 transition-all focus:outline-none focus:border-[#667eea] focus:shadow-[0_0_0_3px_rgba(102,126,234,0.1)]" />
+      <select v-model="statusFilter" @change="filterVideos" class="select-modern w-[130px] px-3.5 py-2.5 border border-[#e8e8e8] dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800 dark:text-gray-200 cursor-pointer transition-all focus:outline-none focus:border-[#667eea] focus:shadow-[0_0_0_3px_rgba(102,126,234,0.1)]">
+        <option value="">全部状态</option>
+        <option :value="VideoStatus.Pending">待爬取</option>
+        <option :value="VideoStatus.Scraped">已爬取</option>
+        <option :value="VideoStatus.Downloading">下载中</option>
+        <option :value="VideoStatus.Downloaded">已下载</option>
+        <option :value="VideoStatus.Failed">失败</option>
+      </select>
+      <input type="text" v-model="videoId" placeholder="输入视频ID" @keyup.enter="scrape" :disabled="isScraping" class="flex-1 min-w-[180px] px-3.5 py-2.5 border border-[#e8e8e8] dark:border-gray-600 rounded-lg text-sm dark:bg-gray-800 dark:text-gray-200 transition-all focus:outline-none focus:border-[#667eea] focus:shadow-[0_0_0_3px_rgba(102,126,234,0.1)]" />
       <button @click="scrape" :disabled="isScraping" class="px-6 py-2.5 text-white border-none rounded-lg text-sm font-medium cursor-pointer whitespace-nowrap transition-all bg-[linear-gradient(135deg,#667eea_0%,#764ba2_100%)] hover:-translate-y-0.5 hover:shadow-[0_4px_12px_rgba(102,126,234,0.35)] disabled:opacity-60 disabled:cursor-not-allowed">{{ isScraping ? '爬取中...' : '爬取' }}</button>
     </div>
 
-    <div v-if="scrapeResult" :class="['mx-5 px-3.5 py-2.5 rounded-lg text-[13px] shrink-0', scrapeResult.success ? 'bg-[#f0fdf4] text-[#166534] border border-[#bbf7d0]' : 'bg-[#fef2f2] text-[#991b1b] border border-[#fecaca]']">
+    <!-- <div v-if="scrapeResult" :class="['mx-5 px-3.5 py-2.5 rounded-lg text-[13px] shrink-0', scrapeResult.success ? 'bg-[#f0fdf4] text-[#166534] border border-[#bbf7d0]' : 'bg-[#fef2f2] text-[#991b1b] border border-[#fecaca]']">
       <span v-if="scrapeResult.success">{{ scrapeResult.name }}</span>
       <span v-else>{{ scrapeResult.message }}</span>
-    </div>
+    </div> -->
 
     <div class="flex-1 flex flex-col overflow-hidden">
-      <div class="flex justify-between items-center px-5 py-3 bg-[#fafbfc] border-b border-[#f0f0f0] shrink-0">
+      <div class="flex justify-between items-center px-5 py-3 bg-[#fafbfc] dark:bg-gray-800 border-b border-[#f0f0f0] dark:border-gray-700 shrink-0">
         <div class="flex items-center gap-3">
-          <span class="text-sm font-semibold text-[#1a1a2e]">视频列表 ({{ filteredVideos.length }}/{{ videos.length }})</span>
+          <span class="text-sm font-semibold text-[#1a1a2e] dark:text-gray-200">视频列表 ({{ filteredVideos.length }}/{{ videos.length }})</span>
           <span v-if="copyMessage" class="text-[13px] text-[#22c55e] font-medium">{{ copyMessage }}</span>
         </div>
         <div class="flex items-center gap-2.5">
-          <input type="text" v-model="searchQuery" @input="filterVideos" placeholder="搜索视频名称" class="px-3 py-1.5 border border-[#e8e8e8] rounded-md text-[13px] w-[180px] transition-all focus:outline-none focus:border-[#667eea]" />
-          <select v-model="statusFilter" @change="filterVideos" class="select-modern px-3 py-1.5 border border-[#e8e8e8] rounded-md text-[13px] bg-white cursor-pointer transition-all focus:outline-none focus:border-[#667eea]">
-            <option value="">全部状态</option>
-            <option :value="VideoStatus.Pending">待爬取</option>
-            <option :value="VideoStatus.Scraped">已爬取</option>
-            <option :value="VideoStatus.Downloading">下载中</option>
-            <option :value="VideoStatus.Downloaded">已下载</option>
-            <option :value="VideoStatus.Failed">失败</option>
-          </select>
           <button v-if="selectedIds.size > 0" @click="batchDownload" class="px-3.5 py-1.5 border-none rounded-md text-xs font-medium cursor-pointer transition-all bg-[#22c55e] text-white hover:bg-[#16a34a]">下载选中 ({{ selectedIds.size }})</button>
           <button v-if="selectedIds.size > 0" @click="deleteSelected" class="px-3.5 py-1.5 border-none rounded-md text-xs font-medium cursor-pointer transition-all bg-[#fee2e2] text-[#dc2626] hover:bg-[#fecaca]">删除选中</button>
           <button v-if="videos.some(v => v.status === VideoStatus.Downloaded)" @click="clearDownloaded" class="px-3 py-1 bg-transparent text-[#667eea] border border-[#667eea] rounded-md text-xs cursor-pointer transition-all hover:bg-[#667eea] hover:text-white">清除已下载</button>
@@ -759,7 +770,7 @@ function handleImageError(event: Event) {
       </div>
 
       <div class="flex-1 flex flex-col overflow-hidden">
-        <div class="flex px-5 py-2.5 bg-[#f8f9fa] border-b border-[#eee] text-xs font-semibold text-[#64748b] uppercase tracking-[0.5px] items-center">
+        <div class="flex px-5 py-2.5 bg-[#f8f9fa] dark:bg-gray-800/50 border-b border-[#eee] dark:border-gray-700 text-xs font-semibold text-[#64748b] dark:text-gray-400 uppercase tracking-[0.5px] items-center">
           <div class="w-8 shrink-0">
             <input type="checkbox" @change="toggleSelectAll" :checked="filteredVideos.length > 0 && filteredVideos.every(v => selectedIds.has(v.id) || v.status === VideoStatus.Downloaded || v.status === VideoStatus.Downloading)" :indeterminate="selectedIds.size > 0 && !filteredVideos.every(v => selectedIds.has(v.id) || v.status === VideoStatus.Downloaded || v.status === VideoStatus.Downloading)" class="w-4 h-4 cursor-pointer" />
           </div>
@@ -773,7 +784,7 @@ function handleImageError(event: Event) {
           <div v-else-if="filteredVideos.length === 0 && !isLoadingMore" class="py-10 px-5 text-center text-[#94a3b8] text-[13px]">没有找到匹配的视频</div>
           <div v-else-if="isLoadingMore && videos.length === 0" class="py-10 px-5 text-center text-[#94a3b8] text-[13px]">加载中...</div>
 
-          <div v-for="video in filteredVideos" :key="video.id" class="flex items-center px-5 py-3 border-b border-[#f5f5f5] transition-colors hover:bg-[#fafbfc]">
+          <div v-for="video in filteredVideos" :key="video.id" class="flex items-center px-5 py-3 border-b border-[#f5f5f5] dark:border-gray-800 transition-colors hover:bg-[#fafbfc] dark:hover:bg-gray-800/50">
             <div class="w-8 shrink-0">
               <input type="checkbox" :checked="selectedIds.has(video.id)" :disabled="video.status === VideoStatus.Downloaded || video.status === VideoStatus.Downloading" @change="toggleSelect(video.id)" class="w-4 h-4 cursor-pointer" />
             </div>
@@ -789,7 +800,7 @@ function handleImageError(event: Event) {
               </div>
             </div>
             <div class="flex-1 min-w-0 pr-4">
-              <span class="block text-sm font-medium text-[#1a1a2e] whitespace-nowrap overflow-hidden text-ellipsis" :title="video.name">{{ video.name }}</span>
+              <span class="block text-sm font-medium text-[#1a1a2e] dark:text-gray-200 whitespace-nowrap overflow-hidden text-ellipsis" :title="video.name">{{ video.name }}</span>
               <div class="flex gap-2 mt-1">
                 <span v-if="video.view_count !== undefined && video.view_count !== null" class="inline-flex items-center gap-[3px] px-1.5 py-0.5 rounded text-[11px] font-medium bg-[#f0f9ff] text-[#0369a1]">
                   <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -830,7 +841,7 @@ function handleImageError(event: Event) {
             <span v-else-if="isLoadingMore" class="text-[13px] text-[#94a3b8]">加载中...</span>
           </div>
 
-          <div v-if="videos.length > 0" class="py-3 px-5 text-right text-xs text-[#94a3b8] border-t border-[#f0f0f0]">共 {{ total }} 条视频，当前显示 {{ videos.length }} 条</div>
+          <div v-if="videos.length > 0" class="py-3 px-5 text-right text-xs text-[#94a3b8] border-t border-[#f0f0f0] dark:border-gray-700">共 {{ total }} 条视频，当前显示 {{ videos.length }} 条</div>
         </div>
       </div>
     </div>
@@ -839,10 +850,10 @@ function handleImageError(event: Event) {
 
     <Teleport to="body">
       <div v-if="confirmDialog.visible" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000]" @click="handleCancel">
-        <div class="bg-white rounded-xl p-6 min-w-[300px] shadow-[0_4px_20px_rgba(0,0,0,0.15)]" @click.stop>
-          <div class="text-[15px] text-[#1a1a2e] mb-5 text-center">{{ confirmDialog.message }}</div>
+        <div class="bg-white dark:bg-gray-800 rounded-xl p-6 min-w-[300px] shadow-[0_4px_20px_rgba(0,0,0,0.15)]" @click.stop>
+          <div class="text-[15px] text-[#1a1a2e] dark:text-gray-200 mb-5 text-center">{{ confirmDialog.message }}</div>
           <div class="flex gap-3 justify-center">
-            <button class="px-6 py-2 border-none rounded-lg text-sm font-medium cursor-pointer transition-all bg-[#f1f5f9] text-[#64748b] hover:bg-[#e2e8f0]" @click="handleCancel">取消</button>
+            <button class="px-6 py-2 border-none rounded-lg text-sm font-medium cursor-pointer transition-all bg-[#f1f5f9] dark:bg-gray-700 text-[#64748b] dark:text-gray-300 hover:bg-[#e2e8f0] dark:hover:bg-gray-600" @click="handleCancel">取消</button>
             <button class="px-6 py-2 border-none rounded-lg text-sm font-medium cursor-pointer transition-all bg-[#4f46e5] text-white hover:bg-[#4338ca]" @click="handleConfirm">确定</button>
           </div>
         </div>
@@ -850,7 +861,7 @@ function handleImageError(event: Event) {
     </Teleport>
 
     <Teleport to="body">
-      <div v-if="coverPopupVisible" class="fixed z-[1000] p-2 bg-white rounded-lg shadow-[0_4px_20px_rgba(0,0,0,0.2)] pointer-events-auto" :style="{ left: coverPopupPosition.x + 20 + 'px', top: coverPopupPosition.y - 150 + 'px' }" @mouseleave="hideCoverPopup">
+      <div v-if="coverPopupVisible" class="fixed z-[1000] p-2 bg-white dark:bg-gray-800 rounded-lg shadow-[0_4px_20px_rgba(0,0,0,0.2)] pointer-events-auto" :style="{ left: coverPopupPosition.x + 20 + 'px', top: coverPopupPosition.y - 150 + 'px' }" @mouseleave="hideCoverPopup">
         <img :src="coverPopupImage" alt="封面预览" class="w-[400px] h-auto object-contain rounded block" />
       </div>
     </Teleport>

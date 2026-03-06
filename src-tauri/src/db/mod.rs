@@ -228,6 +228,25 @@ impl Database {
         // 创建索引
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_local_videos_added_at ON local_videos(added_at DESC)").execute(&self.pool).await?;
 
+        // 嗅探记录表
+        sqlx::query(r#"
+            CREATE TABLE IF NOT EXISTS sniffed_media (
+                id TEXT PRIMARY KEY,
+                page_url TEXT NOT NULL,
+                page_title TEXT DEFAULT '',
+                url TEXT NOT NULL,
+                media_type TEXT NOT NULL DEFAULT 'video',
+                file_ext TEXT DEFAULT '',
+                size INTEGER,
+                source TEXT DEFAULT '',
+                sniffed_at TEXT NOT NULL
+            )
+        "#).execute(&self.pool).await?;
+
+        // 创建索引
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_sniffed_media_sniffed_at ON sniffed_media(sniffed_at DESC)").execute(&self.pool).await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_sniffed_media_page_url ON sniffed_media(page_url)").execute(&self.pool).await?;
+
         Ok(())
     }
 
@@ -949,8 +968,96 @@ impl Database {
         Ok(count > 0)
     }
 
+    // ===== 嗅探记录管理 =====
+
+    /// 保存嗅探记录
+    pub async fn save_sniffed_media(
+        &self,
+        id: &str,
+        page_url: &str,
+        page_title: &str,
+        url: &str,
+        media_type: &str,
+        file_ext: &str,
+        size: Option<u64>,
+        source: &str,
+        sniffed_at: &str,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(r#"
+            INSERT OR REPLACE INTO sniffed_media (id, page_url, page_title, url, media_type, file_ext, size, source, sniffed_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        "#)
+            .bind(id)
+            .bind(page_url)
+            .bind(page_title)
+            .bind(url)
+            .bind(media_type)
+            .bind(file_ext)
+            .bind(size.map(|s| s as i64))
+            .bind(source)
+            .bind(sniffed_at)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// 获取所有嗅探记录（按时间倒序）
+    pub async fn get_all_sniffed_media(&self) -> Result<Vec<SniffedMediaRecord>, sqlx::Error> {
+        let rows = sqlx::query("SELECT id, page_url, page_title, url, media_type, file_ext, size, source, sniffed_at FROM sniffed_media ORDER BY sniffed_at DESC")
+            .fetch_all(&self.pool)
+            .await?;
+
+        let mut records = Vec::new();
+        for row in rows {
+            let size_val: Option<i64> = row.try_get("size").ok();
+            records.push(SniffedMediaRecord {
+                id: row.try_get("id")?,
+                page_url: row.try_get("page_url")?,
+                page_title: row.try_get("page_title").unwrap_or_default(),
+                url: row.try_get("url")?,
+                media_type: row.try_get("media_type").unwrap_or_default(),
+                file_ext: row.try_get("file_ext").unwrap_or_default(),
+                size: size_val.map(|s| s as u64),
+                source: row.try_get("source").unwrap_or_default(),
+                sniffed_at: row.try_get("sniffed_at")?,
+            });
+        }
+        Ok(records)
+    }
+
+    /// 删除嗅探记录
+    pub async fn delete_sniffed_media(&self, id: &str) -> Result<(), sqlx::Error> {
+        sqlx::query("DELETE FROM sniffed_media WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// 清空所有嗅探记录
+    pub async fn clear_sniffed_media(&self) -> Result<(), sqlx::Error> {
+        sqlx::query("DELETE FROM sniffed_media")
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
     /// 关闭数据库连接
     pub async fn close(&self) {
         self.pool.close().await;
     }
+}
+
+/// 嗅探记录（数据库层面）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SniffedMediaRecord {
+    pub id: String,
+    pub page_url: String,
+    pub page_title: String,
+    pub url: String,
+    pub media_type: String,
+    pub file_ext: String,
+    pub size: Option<u64>,
+    pub source: String,
+    pub sniffed_at: String,
 }

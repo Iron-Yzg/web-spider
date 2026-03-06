@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
-import type { Website, AppConfig, ScrapeResult, PaginatedVideos, YtdlpTask, YtdlpConfig, ScraperInfo, LocalVideo } from '../types'
+import type { Website, AppConfig, ScrapeResult, PaginatedVideos, YtdlpTask, YtdlpConfig, ScraperInfo, LocalVideo, SniffResult, SniffedMediaRecord, ConvertTask, ConvertOptions } from '../types'
 
 // ==================== 通用 API ====================
 
@@ -209,4 +209,52 @@ export async function createCastRemoteSession(
     items,
     currentIndex,
   })
+}
+
+// ==================== 嗅探 API ====================
+
+export async function sniffMedia(url: string, timeoutSecs = 5): Promise<SniffResult> {
+  return await invoke<SniffResult>('sniff_media', { url, timeoutSecs })
+}
+
+export async function getSniffedRecords(): Promise<SniffedMediaRecord[]> {
+  return await invoke<SniffedMediaRecord[]>('get_sniffed_records')
+}
+
+export async function deleteSniffedRecord(id: string): Promise<void> {
+  await invoke('delete_sniffed_record', { id })
+}
+
+export async function clearSniffedRecords(): Promise<void> {
+  await invoke('clear_sniffed_records')
+}
+
+// ==================== 格式转换 API ====================
+
+export async function startConvert(
+  inputPath: string,
+  outputPath: string | null,
+  options: ConvertOptions,
+): Promise<ConvertTask> {
+  return await invoke<ConvertTask>('start_convert', { inputPath, outputPath, options })
+}
+
+export async function stopConvert(taskId: string): Promise<void> {
+  await invoke('stop_convert', { taskId })
+}
+
+export async function screenshotVideo(
+  inputPath: string,
+  timestamp: number,
+  outputPath?: string,
+): Promise<string> {
+  return await invoke<string>('screenshot_video', { inputPath, timestamp, outputPath: outputPath || null })
+}
+
+export async function selectConvertInput(): Promise<string | null> {
+  return await invoke<string | null>('select_convert_input')
+}
+
+export async function selectConvertOutput(): Promise<string | null> {
+  return await invoke<string | null>('select_convert_output')
 }

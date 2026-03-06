@@ -10,6 +10,8 @@ mod transcode;
 mod remux;
 mod hls_server;
 mod cast;
+pub mod sniffer;
+pub mod converter;
 
 // 重新导出 scraper 模块的内容
 pub use scraper::{

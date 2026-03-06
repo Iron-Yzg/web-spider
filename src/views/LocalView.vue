@@ -303,8 +303,8 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="h-full flex flex-col bg-white rounded-xl shadow-[0_2px_12px_rgba(0,0,0,0.06)] overflow-hidden">
-    <div class="flex items-center gap-4 px-5 py-4 border-b border-[#f0f0f0] shrink-0">
+  <div class="h-full flex flex-col bg-white dark:bg-gray-900 rounded-xl shadow-[0_2px_12px_rgba(0,0,0,0.06)] overflow-hidden">
+    <div class="flex items-center gap-4 px-5 py-4 border-b border-[#f0f0f0] dark:border-gray-700 shrink-0">
       <button @click="selectVideos" :disabled="isLoading" class="flex items-center gap-2 px-5 py-2.5 border-none rounded-lg text-sm font-medium text-white cursor-pointer transition-all bg-[linear-gradient(135deg,#667eea_0%,#764ba2_100%)] hover:-translate-y-0.5 hover:shadow-[0_4px_12px_rgba(102,126,234,0.35)] disabled:opacity-60 disabled:cursor-not-allowed">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -314,15 +314,15 @@ onMounted(async () => {
         {{ isLoading ? '加载中...' : '添加视频' }}
       </button>
 
-      <div class="flex items-center gap-2 px-3.5 py-2 bg-[#f5f6f8] rounded-lg flex-1 max-w-[400px]">
+      <div class="flex items-center gap-2 px-3.5 py-2 bg-[#f5f6f8] dark:bg-gray-800 rounded-lg flex-1 max-w-[400px]">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-[#94a3b8] shrink-0">
           <circle cx="11" cy="11" r="8"></circle>
           <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
         </svg>
-        <input type="text" v-model="searchQuery" @input="handleSearch" placeholder="搜索视频名称" class="flex-1 border-none bg-transparent text-sm outline-none text-[#1a1a2e] placeholder:text-[#94a3b8]" />
+        <input type="text" v-model="searchQuery" @input="handleSearch" placeholder="搜索视频名称" class="flex-1 border-none bg-transparent text-sm outline-none text-[#1a1a2e] dark:text-gray-200 placeholder:text-[#94a3b8]" />
       </div>
 
-      <span class="text-[13px] text-[#64748b] whitespace-nowrap">共 {{ filteredVideos.length }} 个视频</span>
+      <span class="text-[13px] text-[#64748b] dark:text-gray-400 whitespace-nowrap">共 {{ filteredVideos.length }} 个视频</span>
     </div>
 
     <div class="flex-1 flex flex-col overflow-hidden">
@@ -341,8 +341,8 @@ onMounted(async () => {
       </div>
 
       <div v-else class="flex-1 flex flex-col overflow-hidden">
-        <div class="flex px-5 py-2.5 bg-[#f8f9fa] border-b border-[#eee] text-xs font-semibold text-[#64748b] uppercase tracking-[0.5px] items-center">
-          <span class="w-[60px] h-[34px] shrink-0 mr-3">封面</span>
+        <div class="flex px-5 py-2.5 bg-[#f8f9fa] dark:bg-gray-800/50 border-b border-[#eee] dark:border-gray-700 text-xs font-semibold text-[#64748b] dark:text-gray-400 uppercase tracking-[0.5px] items-center">
+          <span class="w-[60px] text-[13px] shrink-0 mr-3">封面</span>
           <span class="flex-1 min-w-0 pr-4">名称</span>
           <span class="w-[60px] text-[13px] normal-case">大小</span>
           <span class="w-[60px] text-[13px] normal-case">时长</span>
@@ -352,20 +352,20 @@ onMounted(async () => {
         </div>
 
         <div class="flex-1 overflow-y-auto">
-          <div v-for="video in filteredVideos" :key="video.id" class="flex items-center px-5 py-3 border-b border-[#f5f5f5] transition-colors hover:bg-[#fafbfc]">
+          <div v-for="video in filteredVideos" :key="video.id" class="flex items-center px-5 py-3 border-b border-[#f5f5f5] dark:border-gray-800 transition-colors hover:bg-[#fafbfc] dark:hover:bg-gray-800/50">
             <div class="w-[60px] h-[34px] mr-3 relative overflow-hidden rounded bg-[#f5f5f5] shrink-0">
               <div class="w-full h-full flex items-center justify-center rounded bg-[linear-gradient(135deg,#1a1a2e_0%,#16213e_100%)] cursor-pointer transition-all hover:opacity-90" @click="playVideo(video)">
                 <svg class="w-5 h-5 text-white/80" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
               </div>
             </div>
             <div class="flex-1 min-w-0 pr-4">
-              <span class="block text-sm font-medium text-[#1a1a2e] whitespace-nowrap overflow-hidden text-ellipsis" :title="video.name">{{ video.name }}</span>
-              <span class="block mt-0.5 text-[11px] text-[#94a3b8] font-mono whitespace-nowrap overflow-hidden text-ellipsis" :title="video.file_path">{{ video.file_path }}</span>
+              <span class="block text-sm font-medium text-[#1a1a2e] dark:text-gray-200 whitespace-nowrap overflow-hidden text-ellipsis" :title="video.name">{{ video.name }}</span>
+              <span class="block mt-0.5 text-[11px] text-[#94a3b8] dark:text-gray-500 font-mono whitespace-nowrap overflow-hidden text-ellipsis" :title="video.file_path">{{ video.file_path }}</span>
             </div>
-            <div class="w-[60px] text-[13px] text-[#64748b] shrink-0">{{ video.file_size }}</div>
-            <div class="w-[60px] text-[13px] text-[#64748b] shrink-0">{{ video.duration }}</div>
-            <div class="w-[80px] text-[13px] text-[#64748b] shrink-0">{{ video.resolution }}</div>
-            <div class="w-[80px] text-[13px] text-[#64748b] shrink-0">{{ video.added_at.split('T')[0] }}</div>
+            <div class="w-[60px] text-[13px] text-[#64748b] dark:text-gray-400 shrink-0">{{ video.file_size }}</div>
+            <div class="w-[60px] text-[13px] text-[#64748b] dark:text-gray-400 shrink-0">{{ video.duration }}</div>
+            <div class="w-[80px] text-[13px] text-[#64748b] dark:text-gray-400 shrink-0">{{ video.resolution }}</div>
+            <div class="w-[80px] text-[13px] text-[#64748b] dark:text-gray-400 shrink-0">{{ video.added_at.split('T')[0] }}</div>
             <div class="w-[110px] flex items-center gap-1 shrink-0">
               <IconButton variant="play" title="播放" @click="playVideo(video)" />
               <IconButton variant="cast" title="投屏" @click="openDlnaDialog(video)" />
@@ -378,10 +378,10 @@ onMounted(async () => {
 
     <Teleport to="body">
       <div v-if="selectDialog.visible" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000]" @click="handleCancel">
-        <div class="bg-white rounded-xl p-6 min-w-[300px] shadow-[0_4px_20px_rgba(0,0,0,0.15)]" @click.stop>
-          <div class="text-[15px] text-[#1a1a2e] mb-5 text-center">{{ selectDialog.message }}</div>
+        <div class="bg-white dark:bg-gray-800 rounded-xl p-6 min-w-[300px] shadow-[0_4px_20px_rgba(0,0,0,0.15)]" @click.stop>
+          <div class="text-[15px] text-[#1a1a2e] dark:text-gray-200 mb-5 text-center">{{ selectDialog.message }}</div>
           <div class="flex gap-3 justify-center">
-            <button class="px-6 py-2 border-none rounded-lg text-sm font-medium cursor-pointer transition-all bg-[#f1f5f9] text-[#64748b] hover:bg-[#e2e8f0]" @click="handleCancel">取消</button>
+            <button class="px-6 py-2 border-none rounded-lg text-sm font-medium cursor-pointer transition-all bg-[#f1f5f9] dark:bg-gray-700 text-[#64748b] dark:text-gray-300 hover:bg-[#e2e8f0] dark:hover:bg-gray-600" @click="handleCancel">取消</button>
             <button class="px-6 py-2 border-none rounded-lg text-sm font-medium cursor-pointer transition-all bg-[#4f46e5] text-white hover:bg-[#4338ca]" @click="handleConfirm">确定</button>
           </div>
         </div>
