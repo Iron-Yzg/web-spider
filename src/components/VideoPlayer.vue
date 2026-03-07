@@ -390,7 +390,7 @@ function buildCustomControls(): Record<string, unknown>[] {
   if (hasNextVideo.value) {
     controls.push({
       name: 'next-btn',
-      position: 'right',
+      position: 'left',
       index: 12,
       html: ICON_NEXT,
       tooltip: '下一个',
